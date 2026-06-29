@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">المنصة الذهبية الفائقة</string>
+    <string name="accessibility_desc">مساعد الحافظة الخلفي للمنصة الذكية: يسمح بالتقاط توجيهات أتمتة الملفات والمجلدات بمجرد نسخها في أي تطبيق دون الحاجة لفتح الواجهة يدوياً.</string>
+    
+    <!-- Shortcuts strings -->
+    <string name="shortcut_capture_short">🧠 التقاط</string>
+    <string name="shortcut_capture_long">🧠 التقاط وتحليل ذكي</string>
+    
+    <string name="shortcut_build_pack_short">📦 حزمة بناء</string>
+    <string name="shortcut_build_pack_long">📦 تجميع في حزمة بناء</string>
+    
+    <string name="shortcut_execute_short">⚙️ تنفيذ</string>
+    <string name="shortcut_execute_long">⚙️ تنفيذ أوامر الحافظة</string>
+    
+    <string name="shortcut_auto_detect_short">🧠⚡ تلقائي</string>
+    <string name="shortcut_auto_detect_long">🧠⚡ تحليل وتدقيق تلقائي</string>
+</resources>

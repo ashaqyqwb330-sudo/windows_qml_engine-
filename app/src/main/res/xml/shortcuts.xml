@@ -1,0 +1,46 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="smart_capture"
+        android:enabled="true"
+        android:icon="@drawable/ic_smart_capture"
+        android:shortcutShortLabel="@string/shortcut_capture_short"
+        android:shortcutLongLabel="@string/shortcut_capture_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.goldenultra.remix"
+            android:targetClass="com.example.service.QuickSmartCaptureActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="build_pack"
+        android:enabled="true"
+        android:icon="@drawable/ic_build_pack"
+        android:shortcutShortLabel="@string/shortcut_build_pack_short"
+        android:shortcutLongLabel="@string/shortcut_build_pack_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.goldenultra.remix"
+            android:targetClass="com.example.service.QuickBuildPackActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="execute_commands"
+        android:enabled="true"
+        android:icon="@drawable/ic_execute"
+        android:shortcutShortLabel="@string/shortcut_execute_short"
+        android:shortcutLongLabel="@string/shortcut_execute_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.goldenultra.remix"
+            android:targetClass="com.example.service.QuickExecuteActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="auto_detect"
+        android:enabled="true"
+        android:icon="@drawable/ic_auto_detect"
+        android:shortcutShortLabel="@string/shortcut_auto_detect_short"
+        android:shortcutLongLabel="@string/shortcut_auto_detect_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.goldenultra.remix"
+            android:targetClass="com.example.service.QuickAutoDetectActivity" />
+    </shortcut>
+</shortcuts>

@@ -1,0 +1,8 @@
+{
+  "name": "المنصة الذهبية الفائقة",
+  "description": "المنصة الذهبية الذكية لمعالجة النصوص الضخمة، أتمتة الملفات والمجلدات وتطبيق حزم البناء المتقدمة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
