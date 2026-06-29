@@ -94,6 +94,17 @@ class DatabaseManager:
                     created_at TEXT NOT NULL
                 )
             """)
+
+            # Command History Table for holding execution history
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS command_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    command TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    output TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
             
             conn.commit()
 
@@ -236,3 +247,36 @@ class DatabaseManager:
         with self.get_connection() as conn:
             conn.cursor().execute("DELETE FROM style_bank WHERE name = ?", (style_name,))
             conn.commit()
+
+    # --- Command History Methods ---
+    def add_command_history(self, command, status, output):
+        try:
+            with self.get_connection() as conn:
+                conn.cursor().execute(
+                    "INSERT INTO command_history (command, status, output, created_at) VALUES (?, ?, ?, ?)",
+                    (command, status, output, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error adding command history: {e}")
+            return False
+
+    def get_command_history(self):
+        try:
+            with self.get_connection() as conn:
+                rows = conn.cursor().execute("SELECT * FROM command_history ORDER BY id DESC LIMIT 50").fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            print(f"Error getting command history: {e}")
+            return []
+
+    def clear_command_history(self):
+        try:
+            with self.get_connection() as conn:
+                conn.cursor().execute("DELETE FROM command_history")
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error clearing command history: {e}")
+            return False

@@ -1955,6 +1955,14 @@ class EngineBackend(QObject):
     # --- CommandRegistry Advanced Execution System ---
     @Slot(str, str, bool, result=str)
     def execute_command_advanced(self, cmd_line, project_name, dry_run=False):
+        res = self._execute_command_advanced_inner(cmd_line, project_name, dry_run)
+        if not dry_run:
+            status = "failed" if (res.startswith("❌") or "فشل" in res or "خطأ" in res or "⚠️" in res) else "completed"
+            self.db.add_command_history(cmd_line, status, res)
+            self.dbUpdated.emit()
+        return res
+
+    def _execute_command_advanced_inner(self, cmd_line, project_name, dry_run=False):
         parts = cmd_line.strip().split()
         if not parts:
             return "الأمر فارغ."
@@ -2244,6 +2252,220 @@ class EngineBackend(QObject):
             self.process_text_directives_for_project(text, project_name)
             return json.dumps({"status": "builder", "message": "تم توجيه النص للاستخراج المباشر."})
         return json.dumps({"status": "error", "message": "الوضع المحدد غير مدعوم."})
+
+    # --- Command Executor Dashboard Slots ---
+    @Slot(result=str)
+    def get_command_history_json(self):
+        try:
+            history = self.db.get_command_history()
+            return json.dumps(history, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps([], ensure_ascii=False)
+
+    @Slot(result=bool)
+    def clear_command_history(self):
+        try:
+            self.db.clear_command_history()
+            self.dbUpdated.emit()
+            return True
+        except Exception:
+            return False
+
+    @Slot(str, result=str)
+    def get_smart_suggestions(self, project_name):
+        project_dir = self._base_dir
+        if project_name and project_name != "الافتراضي" and project_name != "Default":
+            for p in self.db.get_projects():
+                if p["name"] == project_name:
+                    project_dir = p["path"]
+                    break
+        
+        suggestions = []
+        
+        # 1. Check for duplicates
+        try:
+            import hashlib
+            hashes = set()
+            has_duplicates = False
+            for root, _, filenames in os.walk(project_dir):
+                if has_duplicates:
+                    break
+                for f in filenames:
+                    fp = os.path.join(root, f)
+                    try:
+                        with open(fp, "rb") as file_to_hash:
+                            h = hashlib.md5(file_to_hash.read()).hexdigest()
+                        if h in hashes:
+                            has_duplicates = True
+                            break
+                        else:
+                            hashes.add(h)
+                    except Exception:
+                        pass
+            if has_duplicates:
+                suggestions.append({
+                    "title": "تنظيف الملفات المكررة" if self.appLanguage == "ar" else "Clean Duplicate Files",
+                    "description": "تم الكشف عن ملفات مكررة متطابقة المحتوى بالمشروع، تخلص منها لتوفير المساحة." if self.appLanguage == "ar" else "Identical duplicate files found. Clean them up to save space.",
+                    "command": "duplicates",
+                    "icon": "⚠️",
+                    "type": "duplicates"
+                })
+        except Exception:
+            pass
+            
+        # 2. Check for file structure organization
+        try:
+            unorganized = 0
+            if os.path.exists(project_dir):
+                for item in os.listdir(project_dir):
+                    if os.path.isfile(os.path.join(project_dir, item)):
+                        unorganized += 1
+            if unorganized > 3:
+                suggestions.append({
+                    "title": "تنظيم هيكل المجلد" if self.appLanguage == "ar" else "Organize Folder Structure",
+                    "description": f"يوجد {unorganized} ملفات مبعثرة في المجلد الرئيسي. نقترح تنظيمها في مجلدات فرعية." if self.appLanguage == "ar" else f"There are {unorganized} unorganized files in root. Recommend grouping them.",
+                    "command": "scan",
+                    "icon": "📁",
+                    "type": "organize"
+                })
+        except Exception:
+            pass
+
+        # 3. Code Backup Suggestion
+        suggestions.append({
+            "title": "أخذ نسخة احتياطية للمشروع" if self.appLanguage == "ar" else "Backup Project Code",
+            "description": "توليد حزمة برمجية وتصدير الكود المصدري كنسخة احتياطية آمنة بالحافظة." if self.appLanguage == "ar" else "Generate code pack and export source code to clipboard.",
+            "command": "export",
+            "icon": "📦",
+            "type": "backup"
+        })
+
+        # 4. System Diagnostic Suggestion
+        suggestions.append({
+            "title": "الفحص الذاتي الشامل" if self.appLanguage == "ar" else "Run Comprehensive Diagnosis",
+            "description": "فحص صحة اتصال قاعدة البيانات ومراقب الحافظة والفقاعة وتصاريح الملفات." if self.appLanguage == "ar" else "Verify database health, clipboard monitor, and file permissions.",
+            "command": "selftest",
+            "icon": "🛡️",
+            "type": "diagnostic"
+        })
+        
+        return json.dumps(suggestions, ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def generate_organize_plan(self, folder_path, option):
+        folder_path = self.clean_path_url(folder_path)
+        if not folder_path or not os.path.exists(folder_path):
+            folder_path = self._base_dir
+            
+        plan_lines = []
+        plan_lines.append(f"// 📋 خطة تنظيم المجلد المقترحة (الخيار: {option})")
+        plan_lines.append(f"// المجلد المستهدف: {folder_path}")
+        plan_lines.append("// لتطبيق الخطة، يرجى تشغيل الأوامر التالية عبر المنفذ:\n")
+        
+        try:
+            files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+            if not files:
+                plan_lines.append("// 🔍 لم يتم العثور على أي ملفات مبعثرة في المجلد المستهدف.")
+                return "\n".join(plan_lines)
+                
+            for f in files:
+                full_path = os.path.join(folder_path, f)
+                if option == "by_extension":
+                    _, ext = os.path.splitext(f)
+                    ext = ext.lower().replace(".", "")
+                    if not ext:
+                        ext = "others"
+                    
+                    target_folder = ""
+                    if ext in ["jpg", "jpeg", "png", "gif", "bmp", "svg"]:
+                        target_folder = "Images"
+                    elif ext in ["txt", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "md"]:
+                        target_folder = "Documents"
+                    elif ext in ["py", "kt", "java", "qml", "js", "html", "css", "cpp", "h", "cs", "go", "rs"]:
+                        target_folder = "SourceCode"
+                    elif ext in ["mp3", "wav", "ogg", "m4a"]:
+                        target_folder = "Audio"
+                    elif ext in ["mp4", "mkv", "avi", "mov"]:
+                        target_folder = "Video"
+                    elif ext in ["zip", "rar", "tar", "gz", "7z"]:
+                        target_folder = "Archives"
+                    else:
+                        target_folder = ext.upper() + "_Files"
+                        
+                    plan_lines.append(f"@executor: move {f} {target_folder}/{f}")
+                    
+                elif option == "by_date":
+                    import time
+                    mtime = os.path.getmtime(full_path)
+                    date_folder = time.strftime("%Y-%m", time.localtime(mtime))
+                    plan_lines.append(f"@executor: move {f} {date_folder}/{f}")
+                    
+                else:
+                    plan_lines.append(f"@executor: move {f} Archive_Files/{f}")
+                    
+        except Exception as e:
+            plan_lines.append(f"// ❌ خطة فشلت بسبب خطأ: {str(e)}")
+            
+        return "\n".join(plan_lines)
+
+    @Slot(str, str, result=str)
+    def generate_rename_plan(self, folder_path, pattern):
+        folder_path = self.clean_path_url(folder_path)
+        if not folder_path or not os.path.exists(folder_path):
+            folder_path = self._base_dir
+            
+        plan_lines = []
+        plan_lines.append(f"// 📋 خطة إعادة التسمية المقترحة (النمط: {pattern})")
+        plan_lines.append(f"// المجلد المستهدف: {folder_path}")
+        plan_lines.append("// لتطبيق الخطة، يرجى تشغيل الأوامر التالية عبر المنفذ:\n")
+        
+        try:
+            files = sorted([f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))])
+            if not files:
+                plan_lines.append("// 🔍 لم يتم العثور على أي ملفات لإعادة تسميتها.")
+                return "\n".join(plan_lines)
+                
+            for idx, f in enumerate(files, 1):
+                _, ext = os.path.splitext(f)
+                if "{num}" in pattern:
+                    new_name = pattern.replace("{num}", f"{idx:02d}") + ext
+                elif pattern.endswith("_") or pattern.endswith("-"):
+                    new_name = f"{pattern}{f}"
+                else:
+                    new_name = f"{pattern}_{idx}{ext}"
+                plan_lines.append(f"@executor: rename {f} {new_name}")
+                
+        except Exception as e:
+            plan_lines.append(f"// ❌ خطة فشلت بسبب خطأ: {str(e)}")
+            
+        return "\n".join(plan_lines)
+
+    @Slot(str, result=str)
+    def get_typeahead_suggestions(self, input_str):
+        trimmed = input_str.strip().lower()
+        all_commands = [
+            {"command": "scan", "desc": "فحص ملفات المشروع النشط وعرض شجرة الملفات" if self.appLanguage == "ar" else "Scan project files and show directory tree", "example": "scan"},
+            {"command": "move", "desc": "نقل ملف أو مجلد إلى مسار جديد آمن" if self.appLanguage == "ar" else "Move a file or folder to a new path", "example": "move source.txt dest/source.txt"},
+            {"command": "rename", "desc": "إعادة تسمية ملف محدد بمسار آمن" if self.appLanguage == "ar" else "Rename a file in the active folder", "example": "rename old.txt new.txt"},
+            {"command": "delete", "desc": "حذف ملف أو مجلد مع أخذ نسخة احتياطية تلقائياً" if self.appLanguage == "ar" else "Delete a file or folder safely", "example": "delete temp.txt"},
+            {"command": "copy-safe", "desc": "نسخ ملف بأمان دون تدمير الملفات الحالية" if self.appLanguage == "ar" else "Copy file safely without overwriting", "example": "copy-safe main.py backup.py"},
+            {"command": "duplicates", "desc": "فحص الملفات المكررة ذات المحتوى المتطابق" if self.appLanguage == "ar" else "Scan workspace for duplicate files", "example": "duplicates"},
+            {"command": "project", "desc": "إحصائيات كاملة للمشروع ونسب توزيع الملفات" if self.appLanguage == "ar" else "Get active project stats and summary", "example": "project"},
+            {"command": "template", "desc": "توليد قوالب برمجية سريعة (activity, viewModel, screen)" if self.appLanguage == "ar" else "Generate code template", "example": "template viewModel"},
+            {"command": "extract-title", "desc": "استخراج اسم الفئة (class) الرئيسية من ملف" if self.appLanguage == "ar" else "Extract main class name from code file", "example": "extract-title main.py"},
+            {"command": "export", "desc": "حزم وتصدير الكود المصدري للمشروع للحافظة والملفات" if self.appLanguage == "ar" else "Pack and export project source code", "example": "export"},
+            {"command": "selftest", "desc": "تقرير الفحص الذاتي للنظام والمراقب والاتصال" if self.appLanguage == "ar" else "Comprehensive system diagnostic test", "example": "selftest"}
+        ]
+        
+        if not trimmed:
+            return json.dumps(all_commands, ensure_ascii=False)
+            
+        suggestions = []
+        for cmd in all_commands:
+            if cmd["command"].startswith(trimmed) or trimmed in cmd["command"] or trimmed in cmd["desc"].lower():
+                suggestions.append(cmd)
+                
+        return json.dumps(suggestions, ensure_ascii=False)
 
     # --- Self-Source Export System ---
     @Slot(str, result=str)

@@ -100,7 +100,7 @@ ApplicationWindow {
             "tab_capture": { "ar": "الالتقاط الذكي الفوري", "en": "Smart Capture & Styles" },
             "tab_treedoc": { "ar": "نظام TreeDoc Pro", "en": "TreeDoc Pro Documentation" },
             "tab_gemini": { "ar": "مساعد Gemini AI", "en": "Gemini AI Assistant" },
-            "tab_quick": { "ar": "الإجراءات السريعة", "en": "Quick Actions Hub" },
+            "tab_quick": { "ar": "منصة المنفذ والأتمتة", "en": "Executor & Automation" },
             "tab_link_automator": { "ar": "مؤتمت الروابط والدردشات", "en": "Link & Chat Automator" },
             "tab_projects_advanced": { "ar": "إدارة المشاريع المتقدمة", "en": "Advanced Project Manager" },
             "tab_source_export": { "ar": "التصدير الذاتي للمصدر", "en": "Developer Self-Exporter" },
@@ -1095,164 +1095,10 @@ ApplicationWindow {
                 }
             }
 
-            // TAB 5: Quick Actions Hub
-            Rectangle {
-                color: "transparent"
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 20
-                    spacing: 12
-
-                    Text {
-                        text: backend.appLanguage === "ar" ? "⚡ مركز الإجراءات السريعة والأتمتة" : "⚡ Quick Actions & Automation Hub"
-                        color: metallicGold
-                        font.bold: true
-                        font.pixelSize: 18
-                    }
-
-                    RowLayout {
-                        spacing: 15
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 180
-
-                        // Card 1: Smart Clipboard Scan
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            color: cardSlateBg
-                            border.color: borderSlate
-                            radius: 8
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 8
-                                Text { text: "📋 " + (backend.appLanguage === "ar" ? "التقاط الحافظة الذكي" : "Smart Clipboard Sync"); color: metallicGold; font.bold: true; font.pixelSize: 13 }
-                                Text { text: backend.appLanguage === "ar" ? "يعالج الحافظة فوراً كحزمة بناء أو سياق ذكي." : "Directly process clipboard as builder or smart context."; color: textGray; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                                Spacer { Layout.fillHeight: true }
-                                Button {
-                                    text: backend.appLanguage === "ar" ? "⚡ تشغيل الالتقاط الفوري" : "⚡ Trigger Live Scan"
-                                    Layout.fillWidth: true
-                                    onClicked: {
-                                        var clipText = backend.get_clipboard_text()
-                                        if (clipText.trim() === "") {
-                                            backend.notificationSent("خطأ", "الحافظة فارغة!", "error")
-                                            return
-                                        }
-                                        backend.handle_universal_input(clipText, "Default", "auto_detect")
-                                        refreshDatabase()
-                                    }
-                                }
-                            }
-                        }
-
-                        // Card 2: Security & Privacy Audit
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            color: cardSlateBg
-                            border.color: borderSlate
-                            radius: 8
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 8
-                                Text { text: "🛡️ " + (backend.appLanguage === "ar" ? "فحص الأمان والخصوصية" : "Security & Privacy Audit"); color: metallicGold; font.bold: true; font.pixelSize: 13 }
-                                Text { text: backend.appLanguage === "ar" ? "يفحص كلمات المرور والمفاتيح المخفية بالمشروع النشط." : "Scans active workspace for hardcoded api keys or credentials."; color: textGray; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                                Spacer { Layout.fillHeight: true }
-                                Button {
-                                    text: backend.appLanguage === "ar" ? "🔍 فحص وتوليد تقرير" : "🔍 Generate Audit"
-                                    Layout.fillWidth: true
-                                    onClicked: {
-                                        var reportPath = backend.generate_project_report(backend.baseDir, "html", true)
-                                        backend.run_local_file(reportPath)
-                                        backend.notificationSent("تقرير الأمان", "تم توليد تقرير الخصوصية وفتحه بنجاح.", "success")
-                                    }
-                                }
-                            }
-                        }
-
-                        // Card 3: Export Build Pack
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            color: cardSlateBg
-                            border.color: borderSlate
-                            radius: 8
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 8
-                                Text { text: "📦 " + (backend.appLanguage === "ar" ? "تجميع الحزمة الذهبية" : "Bundle Golden Pack"); color: metallicGold; font.bold: true; font.pixelSize: 13 }
-                                Text { text: backend.appLanguage === "ar" ? "تصدير المجلد الحالي كاملاً مضغوطاً كحزمة جاهزة للتطبيق." : "Compresses active workspace safely into a ZIP build pack."; color: textGray; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                                Spacer { Layout.fillHeight: true }
-                                Button {
-                                    text: backend.appLanguage === "ar" ? "📦 تصدير ZIP" : "📦 Export ZIP"
-                                    Layout.fillWidth: true
-                                    onClicked: {
-                                        var resText = backend.execute_command_advanced("export", "", false)
-                                        backend.notificationSent("تصدير حزمة", resText, "success")
-                                        refreshDatabase()
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Console Command Prompt Panel
-                    Text { text: backend.appLanguage === "ar" ? "🖥️ الكونسول التفاعلي للأوامر الذكية (Console Commands):" : "🖥️ Interactive Golden Command Console:"; color: metallicGold; font.bold: true; font.pixelSize: 13 }
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        color: slateBg
-                        border.color: borderSlate
-                        radius: 8
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 8
-
-                            ScrollView {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                clip: true
-                                TextArea {
-                                    id: quickConsoleOutput
-                                    readOnly: true
-                                    text: backend.appLanguage === "ar" ? "المنصة الذهبية جاهزة لاستقبال الأوامر السريعة...\nمثال: scan, report, chart, duplicates, selftest" : "Golden Engine Terminal Ready...\nExamples: scan, report, chart, duplicates, selftest"
-                                    color: "#10B981" // nice hacker green color
-                                    font.family: "Courier"
-                                    font.pixelSize: 11
-                                    background: Rectangle { color: "transparent" }
-                                }
-                            }
-
-                            RowLayout {
-                                spacing: 10
-                                TextField {
-                                    id: quickConsoleInput
-                                    placeholderText: backend.appLanguage === "ar" ? "اكتب أمر النظام هنا (مثال: duplicates)..." : "Enter command line..."
-                                    color: textSilver
-                                    background: Rectangle { color: cardSlateBg; border.color: borderSlate; radius: 4 }
-                                    Layout.fillWidth: true
-                                    onAccepted: quickConsoleBtn.clicked()
-                                }
-                                Button {
-                                    id: quickConsoleBtn
-                                    text: backend.appLanguage === "ar" ? "تشغيل ⚡" : "Run ⚡"
-                                    onClicked: {
-                                        if (quickConsoleInput.text.trim() !== "") {
-                                            var cmd = quickConsoleInput.text.trim()
-                                            var out = backend.execute_command_advanced(cmd, "Default", false)
-                                            quickConsoleOutput.text = "> " + cmd + "\n" + out
-                                            quickConsoleInput.text = ""
-                                            refreshDatabase()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            // TAB 5: Executor Dashboard Screen
+            ExecutorDashboardScreen {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
             // TAB 6: AIPromptHub Guide
