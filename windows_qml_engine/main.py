@@ -41,7 +41,7 @@ def main():
     backend = EngineBackend()
     app.set_backend(backend)
 
-    # Handle sys.argv if a path is passed on start
+    # Handle sys.argv if a path or shared text is passed on start
     if len(sys.argv) > 1:
         start_path = sys.argv[1]
         if os.path.exists(start_path):
@@ -49,6 +49,10 @@ def main():
                 backend.set_pending_folder(start_path)
             elif os.path.isfile(start_path):
                 backend.set_pending_file(start_path)
+        else:
+            # If it's not a command line flag, treat as shared text
+            if not start_path.startswith("-"):
+                backend.set_pending_shared_text(start_path)
 
     # Initialize QML Engine
     engine = QQmlApplicationEngine()

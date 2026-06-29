@@ -35,8 +35,10 @@ class EngineBackend(QObject):
     activeProjectChanged = Signal(str)
     pendingFileChanged = Signal(str)
     pendingFolderChanged = Signal(str)
+    pendingSharedTextChanged = Signal(str)
     fileOpenRequested = Signal(str)
     folderOpenRequested = Signal(str)
+    sharedTextRequested = Signal(str)
     
     # Link Automator Signals
     linkProgress = Signal(int, str)                     # percentage, status_message
@@ -82,6 +84,7 @@ class EngineBackend(QObject):
         # File and Folder Opening Setup
         self._pending_file = ""
         self._pending_folder = ""
+        self._pending_shared_text = ""
 
         # Clipboard Monitor setup
         self._last_clipboard_text = ""
@@ -168,6 +171,15 @@ class EngineBackend(QObject):
     def pendingFolder(self, val):
         self._pending_folder = val
         self.pendingFolderChanged.emit(val)
+
+    @Property(str, notify=pendingSharedTextChanged)
+    def pendingSharedText(self):
+        return self._pending_shared_text
+
+    @pendingSharedText.setter
+    def pendingSharedText(self, val):
+        self._pending_shared_text = val
+        self.pendingSharedTextChanged.emit(val)
 
     @Slot(str, result=str)
     def clean_path_url(self, url):
@@ -2801,3 +2813,106 @@ class EngineBackend(QObject):
             }, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(str)
+    def set_pending_shared_text(self, text):
+        self._pending_shared_text = text
+        self.pendingSharedTextChanged.emit(text)
+        self.sharedTextRequested.emit(text)
+
+    @Slot()
+    def clear_pending_shared_text(self):
+        self._pending_shared_text = ""
+        self.pendingSharedTextChanged.emit("")
+
+    @Slot(str, result=str)
+    def get_available_actions(self, text):
+        if not text:
+            return json.dumps([], ensure_ascii=False)
+            
+        trimmed = text.strip()
+        actions = []
+        
+        # 1. Builder Pack Action
+        is_builder = "@builder:file" in text and "@builder:end" in text
+        actions.append({
+            "id": "builder",
+            "label_ar": "📦 تطبيق حزمة البناء (@builder)",
+            "label_en": "📦 Apply Builder Pack (@builder)",
+            "description_ar": "استخراج الملفات البرمجية وهيكلتها وتوجيهها تلقائياً للمشروع النشط.",
+            "description_en": "Extract source code files and route them to active project directory.",
+            "recommended": is_builder
+        })
+        
+        # 2. Command Line Executor Action
+        is_executor = "@executor:" in text
+        actions.append({
+            "id": "executor",
+            "label_ar": "⚙️ تنفيذ الأوامر الذكية التلقائية",
+            "label_en": "⚙️ Execute Command Automations",
+            "description_ar": "تشغيل التوجيهات البرمجية والأوامر الآمنة المرفقة بالمستند.",
+            "description_en": "Run safe command-line automation routines bundled inside the context.",
+            "recommended": is_executor
+        })
+        
+        # 3. Smart Capture / Beautify Style Bank
+        is_md = trimmed.startswith("#") or "\n## " in text or "**" in text or "```" in text or "\n- " in text
+        actions.append({
+            "id": "beautify",
+            "label_ar": "🎨 تجميل وتحسين تنسيق النص",
+            "label_en": "🎨 Convert & Beautify Markdown",
+            "description_ar": "تحويل النص إلى وثيقة HTML فاخرة مع حفظها بصندوق الالتقاط الذكي.",
+            "description_en": "Format raw text or markdown into a premium HTML document in the Smart Inbox.",
+            "recommended": is_md and not is_builder
+        })
+        
+        # 4. Smart Capture Memo
+        actions.append({
+            "id": "capture",
+            "label_ar": "🧠 التقاط سريع كمسودة ومذكرة",
+            "label_en": "🧠 Quick Capture as Memo",
+            "description_ar": "توجيه النص المنسوخ كمسودة سريعة آمنة في صندوق الالتقاط وقاعدة البيانات.",
+            "description_en": "Instantly route content to local database and save as a structured text memo.",
+            "recommended": not is_builder and not is_executor and not is_md
+        })
+        
+        return json.dumps(actions, ensure_ascii=False)
+
+    @Slot(str, str, str, result=str)
+    def execute_shared_action(self, action_id, text, project_name="Default"):
+        """
+        Executes the specified shared action on the text, returning success status and message.
+        """
+        try:
+            if action_id == "builder":
+                # Route to process_text_directives_for_project
+                self.process_text_directives_for_project(text, project_name)
+                return json.dumps({"success": True, "message": "builder_routed"}, ensure_ascii=False)
+            elif action_id == "executor":
+                # Executing commands found inside text
+                lines = text.splitlines()
+                executed = 0
+                for line in lines:
+                    trimmed = line.strip()
+                    if "@executor:" in trimmed:
+                        cmd = trimmed.split("@executor:", 1)[1].strip()
+                        if cmd:
+                            project_dir = self._base_dir
+                            if project_name and project_name != "Default" and project_name != "الافتراضي":
+                                for p in self.db.get_projects():
+                                    if p["name"] == project_name:
+                                        project_dir = p["path"]
+                                        break
+                            self._run_safe_command_with_dir(cmd, project_dir)
+                            executed += 1
+                return json.dumps({"success": True, "message": "executor_done", "count": executed}, ensure_ascii=False)
+            elif action_id == "beautify":
+                self.smart_capture_content_v2(text, "space")
+                return json.dumps({"success": True, "message": "beautified"}, ensure_ascii=False)
+            elif action_id == "capture":
+                self.smart_capture_content_v2(text, "gold")
+                return json.dumps({"success": True, "message": "captured"}, ensure_ascii=False)
+            else:
+                return json.dumps({"success": False, "message": "unknown_action"}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"Error: {str(e)}"}, ensure_ascii=False)

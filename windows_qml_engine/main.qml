@@ -256,6 +256,9 @@ ApplicationWindow {
         if (backend.pendingFolder !== "") {
             folderOpenerDialog.openFolder(backend.pendingFolder)
         }
+        if (backend.pendingSharedText !== "") {
+            shareSelectionDialog.loadSharedText(backend.pendingSharedText)
+        }
     }
 
     // SQLite data store proxies
@@ -2432,6 +2435,10 @@ ApplicationWindow {
         id: folderOpenerDialog
     }
 
+    ShareSelectionDialog {
+        id: shareSelectionDialog
+    }
+
     Connections {
         target: backend
         function onFileOpenRequested(filePath) {
@@ -2439,6 +2446,9 @@ ApplicationWindow {
         }
         function onFolderOpenRequested(folderPath) {
             folderOpenerDialog.openFolder(folderPath)
+        }
+        function onSharedTextRequested(text) {
+            shareSelectionDialog.loadSharedText(text)
         }
     }
 
