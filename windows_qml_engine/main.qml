@@ -1044,87 +1044,9 @@ ApplicationWindow {
             }
 
             // TAB 3: TreeDoc Pro interactive viewer
-            Rectangle {
-                color: "transparent"
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 20
-                    spacing: 12
-
-                    Text {
-                        text: getTxt("treedoc_desc")
-                        color: metallicGold
-                        font.bold: true
-                        font.pixelSize: 18
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 65
-                        color: cardSlateBg
-                        border.color: borderSlate
-                        radius: 8
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            Text { text: backend.appLanguage === "ar" ? "المجلد المستهدف:" : "Target Folder:"; color: textSilver; font.bold: true }
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 34
-                                color: slateBg
-                                border.color: borderSlate
-                                radius: 4
-                                Text {
-                                    id: treeFolderText
-                                    anchors.centerIn: parent
-                                    text: getTxt("not_selected")
-                                    color: textGray
-                                    font.pixelSize: 11
-                                }
-                            }
-                            Button {
-                                text: getTxt("browse")
-                                onClicked: treeFolderDialog.open()
-                            }
-                        }
-                    }
-
-                    RowLayout {
-                        Text { text: getTxt("export_format"); color: textSilver; font.pixelSize: 11 }
-                        ComboBox {
-                            id: formatSelector
-                            model: ["html", "json", "txt"]
-                            implicitWidth: 100
-                        }
-                        Spacer { Layout.fillWidth: true }
-                        Button {
-                            text: getTxt("btn_generate_tree")
-                            enabled: treeFolderText.text !== getTxt("not_selected")
-                            onClicked: {
-                                backend.generate_treedoc(treeFolderText.text, formatSelector.currentText)
-                            }
-                        }
-                    }
-
-                    ScrollView {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        TextArea {
-                            id: treePreviewArea
-                            placeholderText: backend.appLanguage === "ar" ? "سيظهر التقرير التفاعلي هنا بعد توليده..." : "TreeDoc outline report output will show here..."
-                            color: textSilver
-                            font.family: "Consolas"
-                            font.pixelSize: 11
-                            readOnly: true
-                            background: Rectangle {
-                                color: cardSlateBg
-                                border.color: borderSlate
-                                border.width: 1
-                                radius: 8
-                            }
-                        }
-                    }
-                }
+            TreeDocDashboardScreen {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
             // TAB 4: Gemini AI Copilot
@@ -2334,14 +2256,6 @@ ApplicationWindow {
         }
     }
 
-    FolderDialog {
-        id: treeFolderDialog
-        title: "اختر المجلد لصنع التقرير الشجري له"
-        onAccepted: {
-            treeFolderText.text = backend.clean_path_url(selectedFolder.toString())
-        }
-    }
-
     // Connection hooks back to Python backend signals
     Connections {
         target: backend
@@ -2389,12 +2303,7 @@ ApplicationWindow {
         }
 
         function onTreeDocCreated(format, path) {
-            if (format === "txt") {
-                treePreviewArea.text = (backend.appLanguage === "ar" ? "تم حفظ التقرير النصي بنجاح في:\n" : "Text tree successfully generated at:\n") + path
-            } else if (format === "json") {
-                treePreviewArea.text = (backend.appLanguage === "ar" ? "تم تصدير هيكلية JSON بنجاح في:\n" : "JSON tree data successfully generated at:\n") + path
-            } else {
-                treePreviewArea.text = (backend.appLanguage === "ar" ? "تم توليد وتصميم التقرير الشجري التفاعلي HTML بنجاح في:\n" : "Interactive TreeDoc HTML report successfully generated at:\n") + path
+            if (format !== "txt" && format !== "json") {
                 Qt.openUrlExternally("file:///" + path)
             }
             refreshDatabase()

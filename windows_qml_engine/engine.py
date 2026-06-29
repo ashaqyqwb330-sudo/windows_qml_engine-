@@ -871,158 +871,404 @@ class EngineBackend(QObject):
         return "\n".join(html_lines)
 
     # --- TreeDoc Pro Interactive Engine ---
-    @Slot(str, str)
-    def generate_treedoc(self, folder_path, doc_format):
+    @Slot(str, result=str)
+    def get_tree_data_json(self, folder_path):
         folder_path = self.clean_path_url(folder_path)
         if not os.path.exists(folder_path):
-            self.logAdded.emit("error", "المسار غير موجود!")
-            return
+            return json.dumps({"success": False, "message": "المسار غير موجود!"}, ensure_ascii=False)
+        
+        import time
+        start_time = time.time()
+        
+        stats = {
+            "total_files": 0,
+            "total_folders": 0,
+            "total_size": 0,
+            "scan_time_ms": 0,
+            "total_size_formatted": "0 B"
+        }
+        
+        chart = {
+            "Code": {"count": 0, "size": 0, "name": "برمجيات"},
+            "Text": {"count": 0, "size": 0, "name": "نصوص"},
+            "Media": {"count": 0, "size": 0, "name": "وسائط"},
+            "Other": {"count": 0, "size": 0, "name": "أخرى"}
+        }
+        
+        code_exts = {'.py', '.kt', '.java', '.js', '.ts', '.qml', '.cpp', '.h', '.cs', '.go', '.sh', '.bat', '.spec', '.iss', '.sql', '.html', '.css', '.gradle', '.kts'}
+        text_exts = {'.txt', '.md', '.json', '.xml', '.toml', '.yaml', '.yml', '.properties', '.csv', '.ini', '.cfg'}
+        media_exts = {'.png', '.jpg', '.jpeg', '.gif', '.mp4', '.mp3', '.wav', '.ico', '.svg', '.pdf'}
+        
+        def format_size(size_bytes):
+            if size_bytes < 1024:
+                return f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                return f"{size_bytes / 1024:.1f} KB"
+            elif size_bytes < 1024 * 1024 * 1024:
+                return f"{size_bytes / (1024 * 1024):.1f} MB"
+            else:
+                return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+                
+        def scan_node(path):
+            name = os.path.basename(path) or path
+            node = {
+                "name": name,
+                "path": path,
+                "type": "directory" if os.path.isdir(path) else "file",
+                "size_bytes": 0,
+                "size_formatted": "0 B",
+                "mtime": "",
+                "children": []
+            }
+            
+            try:
+                mtime_epoch = os.path.getmtime(path)
+                node["mtime"] = datetime.fromtimestamp(mtime_epoch).strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                pass
+                
+            if os.path.isdir(path):
+                stats["total_folders"] += 1
+                try:
+                    items = sorted(os.listdir(path))
+                except Exception:
+                    items = []
+                    
+                dir_size = 0
+                for item in items:
+                    if item in self.ignore_dirs or item.startswith('.'):
+                        continue
+                    child_path = os.path.join(path, item)
+                    child_node = scan_node(child_path)
+                    node["children"].append(child_node)
+                    dir_size += child_node["size_bytes"]
+                
+                node["size_bytes"] = dir_size
+                node["size_formatted"] = format_size(dir_size)
+            else:
+                stats["total_files"] += 1
+                try:
+                    sz = os.path.getsize(path)
+                except Exception:
+                    sz = 0
+                node["size_bytes"] = sz
+                node["size_formatted"] = format_size(sz)
+                stats["total_size"] += sz
+                
+                ext = os.path.splitext(name)[1].lower()
+                node["extension"] = ext
+                
+                # Categorize
+                if ext in code_exts:
+                    cat = "Code"
+                elif ext in text_exts:
+                    cat = "Text"
+                elif ext in media_exts:
+                    cat = "Media"
+                else:
+                    cat = "Other"
+                    
+                chart[cat]["count"] += 1
+                chart[cat]["size"] += sz
+                
+            return node
+            
+        tree_structure = scan_node(folder_path)
+        
+        chart_formatted = {}
+        for cat, val in chart.items():
+            chart_formatted[cat] = {
+                "count": val["count"],
+                "size_bytes": val["size"],
+                "size_formatted": format_size(val["size"]),
+                "name": val["name"]
+            }
+            
+        stats["total_size_formatted"] = format_size(stats["total_size"])
+        end_time = time.time()
+        stats["scan_time_ms"] = int((end_time - start_time) * 1000)
+        
+        return json.dumps({
+            "success": True,
+            "stats": stats,
+            "chart": chart_formatted,
+            "tree": tree_structure
+        }, ensure_ascii=False)
 
+    @Slot(str, str, result=str)
+    def generate_treedoc(self, folder_path, doc_format):
+        folder_path = self.clean_path_url(folder_path)
+        doc_format = doc_format.lower().strip()
+        
+        if not os.path.exists(folder_path):
+            self.logAdded.emit("error", "المسار غير موجود!")
+            return json.dumps({"success": False, "message": "المسار غير موجود!"}, ensure_ascii=False)
+            
         self.logAdded.emit("info", f"🌲 جاري زراعة وتوليد التقرير الشجري بأسلوب {doc_format}...")
         self.db.log_action("info", f"بدء توليد TreeDoc للمجلد {folder_path} بصيغة {doc_format}")
-
+        
+        # Scan folder using get_tree_data_json
+        tree_json_str = self.get_tree_data_json(folder_path)
+        tree_data = json.loads(tree_json_str)
+        if not tree_data.get("success"):
+            return tree_json_str
+            
         treedocs_dir = os.path.join(self._base_dir, "TreeDocs")
         os.makedirs(treedocs_dir, exist_ok=True)
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        if doc_format == "txt":
-            result = self._generate_treedoc_txt(folder_path)
-            file_name = f"TreeDoc_{date_str}.txt"
-            target_path = os.path.join(treedocs_dir, file_name)
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(result)
-            self.treeDocCreated.emit("txt", target_path)
-            self.logAdded.emit("success", f"🌲 تم حفظ التقرير النصي بنجاح في {file_name}!")
-
-        elif doc_format == "json":
-            tree_data = self._generate_treedoc_json_structure(folder_path)
-            result = json.dumps(tree_data, ensure_ascii=False, indent=4)
-            file_name = f"TreeDoc_{date_str}.json"
-            target_path = os.path.join(treedocs_dir, file_name)
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(result)
-            self.treeDocCreated.emit("json", target_path)
-            self.logAdded.emit("success", f"🌲 تم توليد التقرير الشجري المهيكل بنجاح في {file_name}!")
-
-        elif doc_format == "html":
-            result = self._generate_treedoc_html(folder_path)
-            file_name = f"TreeDoc_{date_str}.html"
-            target_path = os.path.join(treedocs_dir, file_name)
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(result)
-            self.treeDocCreated.emit("html", target_path)
-            self.logAdded.emit("success", f"🌲 تم تصميم شجرة تفاعلية غنية بالوسائط في {file_name}!")
-
-    def _generate_treedoc_txt(self, path, indent=""):
-        lines = []
-        if indent == "":
-            lines.append(f"📁 {os.path.basename(path)}/ [مجلد العمل النشط]")
-        try:
-            items = sorted(os.listdir(path))
-        except Exception:
-            return ""
-
-        for item in items:
-            if item in self.ignore_dirs:
-                continue
-            full_path = os.path.join(path, item)
-            if os.path.isdir(full_path):
-                lines.append(f"{indent}├── 📁 {item}/")
-                lines.append(self._generate_treedoc_txt(full_path, indent + "│   "))
-            else:
-                size_kb = round(os.path.getsize(full_path) / 1024, 1)
-                lines.append(f"{indent}├── 📄 {item} ({size_kb} KB)")
-        return "\n".join([l for l in lines if l.strip()])
-
-    def _generate_treedoc_json_structure(self, path):
-        node = {"name": os.path.basename(path), "type": "directory", "children": []}
-        try:
-            items = sorted(os.listdir(path))
-            for item in items:
-                if item in self.ignore_dirs:
-                    continue
-                full_path = os.path.join(path, item)
-                if os.path.isdir(full_path):
-                    node["children"].append(self._generate_treedoc_json_structure(full_path))
-                else:
-                    node["children"].append({
-                        "name": item,
-                        "type": "file",
-                        "size_bytes": os.path.getsize(full_path)
-                    })
-        except Exception:
-            pass
-        return node
-
-    def _generate_treedoc_html(self, path):
-        txt_tree = self._generate_treedoc_txt(path)
-        escaped_tree = txt_tree.replace("<", "&lt;").replace(">", "&gt;")
         
-        html = f"""<!DOCTYPE html>
-<html>
+        stats = tree_data["stats"]
+        chart = tree_data["chart"]
+        tree = tree_data["tree"]
+        
+        result_text = ""
+        file_name = ""
+        
+        if doc_format == "txt":
+            # 1. ASCII Tree text format
+            def _to_txt(node, indent=""):
+                lines = []
+                if indent == "":
+                    lines.append(f"📁 {node['name']}/ [مجلد العمل النشط] ({node['size_formatted']})")
+                for child in node.get("children", []):
+                    if child["type"] == "directory":
+                        lines.append(f"{indent}├── 📁 {child['name']}/ ({child['size_formatted']})")
+                        lines.append(_to_txt(child, indent + "│   "))
+                    else:
+                        lines.append(f"{indent}├── 📄 {child['name']} ({child['size_formatted']})")
+                return "\n".join([l for l in lines if l.strip()])
+                
+            result_text = _to_txt(tree)
+            file_name = f"TreeDoc_{date_str}.txt"
+            
+        elif doc_format == "json":
+            # 2. JSON format
+            result_text = json.dumps(tree_data, ensure_ascii=False, indent=4)
+            file_name = f"TreeDoc_{date_str}.json"
+            
+        elif doc_format == "csv":
+            # 3. CSV flat-list format
+            csv_lines = ["Name,Path,Type,Size_Bytes,Size_Formatted,Last_Modified,Extension"]
+            def _to_csv(node):
+                name_esc = node["name"].replace('"', '""')
+                path_esc = node["path"].replace('"', '""')
+                ext = node.get("extension", "")
+                csv_lines.append(f'"{name_esc}","{path_esc}","{node["type"]}",{node["size_bytes"]},"{node["size_formatted"]}","{node["mtime"]}","{ext}"')
+                for child in node.get("children", []):
+                    _to_csv(child)
+            _to_csv(tree)
+            result_text = "\n".join(csv_lines)
+            file_name = f"TreeDoc_{date_str}.csv"
+            
+        elif doc_format in ["html", "pdf"]:
+            # 4. Interactive HTML or printable view (suitable for PDF saving)
+            # Create a collapsible tree in HTML using <details> and <summary>
+            def _to_html_tree(node):
+                html_tree = []
+                if node["type"] == "directory":
+                    html_tree.append(f"<details open><summary class='folder'>📁 {node['name']} <span class='sz'>({node['size_formatted']})</span></summary>")
+                    html_tree.append("<ul>")
+                    for child in node.get("children", []):
+                        html_tree.append(f"<li>{_to_html_tree(child)}</li>")
+                    html_tree.append("</ul>")
+                    html_tree.append("</details>")
+                else:
+                    html_tree.append(f"<span class='file'>📄 {node['name']} <span class='sz'>({node['size_formatted']})</span> <span class='mtime'>[{node['mtime']}]</span></span>")
+                return "".join(html_tree)
+                
+            tree_html = _to_html_tree(tree)
+            
+            # Create category boxes
+            category_boxes = []
+            for cat, details in chart.items():
+                category_boxes.append(f"""
+                <div class="card">
+                    <h3>{details['name']} ({cat})</h3>
+                    <p class="large">{details['count']} ملفات</p>
+                    <p class="sub">الحجم الكلي: {details['size_formatted']}</p>
+                </div>
+                """)
+            category_cards_html = "\n".join(category_boxes)
+            
+            title = f"تقرير شجرة الملفات - {tree['name']}"
+            is_pdf = (doc_format == "pdf")
+            print_style = "body { background-color: white !important; color: black !important; } .container { box-shadow: none !important; border: none !important; }" if is_pdf else ""
+            
+            result_text = f"""<!DOCTYPE html>
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>شجرة الملفات التفاعلية - TreeDoc Pro</title>
+    <title>{title}</title>
     <style>
         body {{
-            background-color: #05070E;
-            color: #E4E9FC;
+            background-color: #0B0F19;
+            color: #E2E8F0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            direction: rtl;
-            padding: 40px;
+            margin: 0;
+            padding: 20px;
         }}
         .container {{
-            background-color: #0D1127;
-            border: 1px solid #1E295D;
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #161D2C;
+            border: 1px solid #212A3E;
             padding: 30px;
             border-radius: 12px;
-            max-width: 1000px;
-            margin: 0 auto;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
         }}
         h1 {{
-            color: #FCD34D;
-            border-bottom: 1px solid #1E295D;
-            padding-bottom: 10px;
+            color: #D4AF37;
+            border-bottom: 2px solid #212A3E;
+            padding-bottom: 15px;
+            margin-top: 0;
         }}
-        pre {{
-            background-color: #05070E;
-            border: 1px solid #1E295D;
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }}
+        .card {{
+            background-color: #0B0F19;
+            border: 1px solid #212A3E;
             padding: 20px;
             border-radius: 8px;
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
-            overflow-x: auto;
-            line-height: 1.6;
+            text-align: center;
         }}
-        .badge {{
-            display: inline-block;
-            background-color: #1E295D;
-            color: #FCD34D;
-            padding: 4px 10px;
-            border-radius: 20px;
+        .card h3 {{
+            margin-top: 0;
+            color: #808A9D;
+            font-size: 14px;
+        }}
+        .card .large {{
+            font-size: 24px;
+            font-weight: bold;
+            color: #F3E5AB;
+            margin: 10px 0;
+        }}
+        .card .sub {{
+            font-size: 12px;
+            color: #808A9D;
+            margin: 0;
+        }}
+        details {{
+            margin-left: 15px;
+        }}
+        summary {{
+            cursor: pointer;
+            padding: 4px;
+            font-weight: bold;
+            color: #F3E5AB;
+        }}
+        summary:hover {{
+            color: #D4AF37;
+        }}
+        ul {{
+            list-style: none;
+            padding-left: 20px;
+            border-left: 1px dashed #212A3E;
+            margin: 5px 0;
+        }}
+        li {{
+            margin: 4px 0;
+        }}
+        .file {{
+            color: #E2E8F0;
+            padding: 2px;
+        }}
+        .sz {{
+            color: #10B981;
             font-size: 11px;
-            margin-bottom: 20px;
+        }}
+        .mtime {{
+            color: #808A9D;
+            font-size: 10px;
         }}
         .footer {{
-            margin-top: 50px;
             text-align: center;
-            color: #53648E;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #212A3E;
+            color: #808A9D;
             font-size: 12px;
         }}
+        {print_style}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🌲 التقرير الشجري التفاعلي لـ {os.path.basename(path)}</h1>
-        <div class="badge">نظام TreeDoc للويندوز Pro</div>
-        <pre>{escaped_tree}</pre>
+        <h1>🌲 تقرير مستكشف الملفات الشجري: {tree['name']}</h1>
+        <div class="stats-grid">
+            <div class="card">
+                <h3>إجمالي المجلدات</h3>
+                <p class="large">{stats['total_folders']}</p>
+                <p class="sub">مجلد فرعي نشط</p>
+            </div>
+            <div class="card">
+                <h3>إجمالي الملفات</h3>
+                <p class="large">{stats['total_files']}</p>
+                <p class="sub">ملف ممسوح ضوئياً</p>
+            </div>
+            <div class="card">
+                <h3>الحجم الكلي على القرص</h3>
+                <p class="large">{stats['total_size_formatted']}</p>
+                <p class="sub">{stats['total_size']} بايت كلي</p>
+            </div>
+            <div class="card">
+                <h3>مدة المسح والمعالجة</h3>
+                <p class="large">{stats['scan_time_ms']} ms</p>
+                <p class="sub">سرعة فائقة مخصصة للويندوز Pro</p>
+            </div>
+        </div>
+
+        <h2>📊 تصنيف وتوزيع الملفات:</h2>
+        <div class="stats-grid">
+            {category_cards_html}
+        </div>
+
+        <h2>🌴 هيكلية المجلد الشجرية التفاعلية:</h2>
+        <div style="background-color: #0B0F19; padding: 20px; border-radius: 8px; border: 1px solid #212A3E; overflow-x: auto;">
+            {tree_html}
+        </div>
+
         <div class="footer">
-            تم التوليد والتغليف بواسطة محرك المنصة الذهبية للويندوز Pro 🌲🌐
+            تم التوليد والتصدير والتأمين بواسطة المساعد الذهبي للويندوز Pro 🌲 - تاريخ الإصدار: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         </div>
     </div>
 </body>
 </html>"""
-        return html
+            file_name = f"TreeDoc_{date_str}.html" if doc_format == "html" else f"TreeDoc_{date_str}_print.html"
+            
+        else:
+            return json.dumps({"success": False, "message": "الصيغة المحددة غير مدعومة!"}, ensure_ascii=False)
+            
+        # Write to target backup file
+        target_path = os.path.join(treedocs_dir, file_name)
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(result_text)
+            
+        # Log to db
+        log_msg = f"تم بنجاح تصدير وحفظ التقرير الشجري ({doc_format.upper()}) إلى: {target_path}"
+        self.db.log_action("success", log_msg)
+        self.logAdded.emit("success", log_msg)
+        self.treeDocCreated.emit(doc_format, target_path)
+        
+        self.notificationSent.emit(
+            "تصدير التقرير الشجري" if self.appLanguage == "ar" else "TreeDoc Export",
+            f"تم حفظ التقرير بنجاح بصيغة {doc_format.upper()} في المجلد المعتمد." if self.appLanguage == "ar" else f"Successfully saved {doc_format.upper()} report.",
+            "success"
+        )
+        
+        preview = result_text[:500] + "\n...\n" + result_text[-200:] if len(result_text) > 700 else result_text
+        
+        return json.dumps({
+            "success": True,
+            "path": target_path,
+            "filename": file_name,
+            "format": doc_format,
+            "preview": preview,
+            "stats": stats
+        }, ensure_ascii=False)
 
     # --- Gemini AI Chat Assistant ---
     @Slot(str)
