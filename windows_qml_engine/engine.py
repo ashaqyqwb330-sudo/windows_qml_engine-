@@ -33,6 +33,10 @@ class EngineBackend(QObject):
     appLanguageChanged = Signal(str)
     bubbleEnabledChanged = Signal(bool)
     activeProjectChanged = Signal(str)
+    pendingFileChanged = Signal(str)
+    pendingFolderChanged = Signal(str)
+    fileOpenRequested = Signal(str)
+    folderOpenRequested = Signal(str)
     
     # Link Automator Signals
     linkProgress = Signal(int, str)                     # percentage, status_message
@@ -74,6 +78,10 @@ class EngineBackend(QObject):
         self._app_language = self.db.get_setting("language", "ar") # ar/en
         self._bubble_enabled = self.db.get_setting("bubble_enabled", "true").lower() == "true"
         self._active_project = "Default"
+
+        # File and Folder Opening Setup
+        self._pending_file = ""
+        self._pending_folder = ""
 
         # Clipboard Monitor setup
         self._last_clipboard_text = ""
@@ -142,6 +150,24 @@ class EngineBackend(QObject):
     def activeProject(self, val):
         self._active_project = val
         self.activeProjectChanged.emit(val)
+
+    @Property(str, notify=pendingFileChanged)
+    def pendingFile(self):
+        return self._pending_file
+
+    @pendingFile.setter
+    def pendingFile(self, val):
+        self._pending_file = val
+        self.pendingFileChanged.emit(val)
+
+    @Property(str, notify=pendingFolderChanged)
+    def pendingFolder(self):
+        return self._pending_folder
+
+    @pendingFolder.setter
+    def pendingFolder(self, val):
+        self._pending_folder = val
+        self.pendingFolderChanged.emit(val)
 
     @Slot(str, result=str)
     def clean_path_url(self, url):
@@ -2690,3 +2716,88 @@ class EngineBackend(QObject):
             return json.dumps(status, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    @Slot(str)
+    def set_pending_file(self, path):
+        path = self.clean_path_url(path)
+        self._pending_file = path
+        self.pendingFileChanged.emit(path)
+        self.fileOpenRequested.emit(path)
+
+    @Slot(str)
+    def set_pending_folder(self, path):
+        path = self.clean_path_url(path)
+        self._pending_folder = path
+        self.pendingFolderChanged.emit(path)
+        self.folderOpenRequested.emit(path)
+
+    @Slot()
+    def clear_pending_file(self):
+        self._pending_file = ""
+        self.pendingFileChanged.emit("")
+
+    @Slot()
+    def clear_pending_folder(self):
+        self._pending_folder = ""
+        self.pendingFolderChanged.emit("")
+
+    @Slot(str, result=str)
+    def handle_file_open(self, file_path):
+        file_path = self.clean_path_url(file_path)
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
+            return json.dumps({"success": False, "error": "File not found"}, ensure_ascii=False)
+        try:
+            size_bytes = os.path.getsize(file_path)
+            # Read first 1000 characters for preview
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                content_preview = f.read(1000)
+            
+            def format_sz(sz):
+                for unit in ['B', 'KB', 'MB', 'GB']:
+                    if sz < 1024.0:
+                        return f"{sz:.2f} {unit}"
+                    sz /= 1024.0
+                return f"{sz:.2f} TB"
+
+            return json.dumps({
+                "success": True,
+                "path": file_path,
+                "name": os.path.basename(file_path),
+                "size_formatted": format_sz(size_bytes),
+                "preview": content_preview
+            }, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def handle_folder_open(self, folder_path):
+        folder_path = self.clean_path_url(folder_path)
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            return json.dumps({"success": False, "error": "Folder not found"}, ensure_ascii=False)
+        try:
+            file_count = 0
+            total_size = 0
+            for root_dir, dirs, files in os.walk(folder_path):
+                file_count += len(files)
+                for file_name in files:
+                    try:
+                        total_size += os.path.getsize(os.path.join(root_dir, file_name))
+                    except Exception:
+                        pass
+            
+            def format_sz(sz):
+                for unit in ['B', 'KB', 'MB', 'GB']:
+                    if sz < 1024.0:
+                        return f"{sz:.2f} {unit}"
+                    sz /= 1024.0
+                return f"{sz:.2f} TB"
+
+            return json.dumps({
+                "success": True,
+                "path": folder_path,
+                "name": os.path.basename(folder_path),
+                "file_count": file_count,
+                "size_formatted": format_sz(total_size)
+            }, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)

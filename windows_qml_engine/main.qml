@@ -250,6 +250,12 @@ ApplicationWindow {
 
     Component.onCompleted: {
         refreshDatabase()
+        if (backend.pendingFile !== "") {
+            fileOpenerDialog.openFile(backend.pendingFile)
+        }
+        if (backend.pendingFolder !== "") {
+            folderOpenerDialog.openFolder(backend.pendingFolder)
+        }
     }
 
     // SQLite data store proxies
@@ -2416,5 +2422,42 @@ ApplicationWindow {
 
     PermissionsDashboardDialog {
         id: permissionsDashboardDialog
+    }
+
+    FileOpenerDialog {
+        id: fileOpenerDialog
+    }
+
+    FolderOpenerDialog {
+        id: folderOpenerDialog
+    }
+
+    Connections {
+        target: backend
+        function onFileOpenRequested(filePath) {
+            fileOpenerDialog.openFile(filePath)
+        }
+        function onFolderOpenRequested(folderPath) {
+            folderOpenerDialog.openFolder(folderPath)
+        }
+    }
+
+    function openFileInEditor(filePath) {
+        if (!filePath) return;
+        mainStack.currentIndex = 8;
+        editFilePathLabel.text = filePath;
+        editorTextArea.text = backend.read_local_file(filePath);
+        
+        // Find parent directory
+        var cleanPath = filePath.replace(/\\/g, "/");
+        var lastSlash = cleanPath.lastIndexOf("/");
+        if (lastSlash !== -1) {
+            var dirPath = cleanPath.substring(0, lastSlash);
+            browserPathInput.text = dirPath;
+            localFileBrowserTab.loadLocalFiles(dirPath);
+        } else {
+            browserPathInput.text = backend.baseDir;
+            localFileBrowserTab.loadLocalFiles(backend.baseDir);
+        }
     }
 }
