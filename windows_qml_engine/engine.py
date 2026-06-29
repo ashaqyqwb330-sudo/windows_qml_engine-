@@ -1919,21 +1919,27 @@ class EngineBackend(QObject):
         return json.dumps({"status": "error", "message": "الوضع المحدد غير مدعوم."})
 
     # --- Self-Source Export System ---
-    @Slot(result=str)
-    def export_app_own_source(self):
-        source_dir = os.path.abspath(os.path.dirname(__file__))
-        result_text = []
-        result_text.append("// =========================================================\n")
-        result_text.append("// 📥 حزمة التصدير الذاتي للمصدر - المساعد الذكي الذهبي للويندوز Pro\n")
-        result_text.append(f"// تاريخ التصدير: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        result_text.append("// =========================================================\n\n")
-
-        files_to_export = [
-            "main.py", "engine.py", "db_manager.py", "main.qml", "Spacer.qml", "requirements.txt", "README.md"
-        ]
-        for fname in files_to_export:
-            fpath = os.path.join(source_dir, fname)
-            if os.path.exists(fpath):
+    @Slot(str, result=str)
+    def export_windows_source(self, custom_save_dir=""):
+        try:
+            source_dir = os.path.abspath(os.path.dirname(__file__))
+            files = []
+            for name in os.listdir(source_dir):
+                fpath = os.path.join(source_dir, name)
+                if os.path.isfile(fpath):
+                    ext = os.path.splitext(name)[1].lower()
+                    if ext in ['.py', '.qml', '.txt', '.md', '.spec', '.iss'] or name in ['requirements.txt', 'README.md']:
+                        if name not in ['app.ico', 'generate_icon.py']:
+                            files.append(name)
+            
+            result_text = []
+            result_text.append("// =========================================================\n")
+            result_text.append("// 📥 حزمة التصدير الذاتي للمصدر - المساعد الذكي الذهبي للويندوز Pro\n")
+            result_text.append(f"// تاريخ التصدير: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            result_text.append("// =========================================================\n\n")
+            
+            for fname in sorted(files):
+                fpath = os.path.join(source_dir, fname)
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
@@ -1943,13 +1949,169 @@ class EngineBackend(QObject):
                         result_text.append("\n")
                     result_text.append("// @builder:end\n\n")
                 except Exception as e:
-                    print(f"Self-source export error for {fname}: {e}")
+                    print(f"Error reading file {fname}: {e}")
+            
+            final_pack = "".join(result_text)
+            
+            # Copy to Clipboard
+            self.clipboard.setText(final_pack)
+            
+            # Determine save path
+            if custom_save_dir and os.path.exists(custom_save_dir):
+                save_dir = custom_save_dir
+            else:
+                save_dir = os.path.join(self._base_dir, "SmartInbox")
+            
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, "Source_Export.txt")
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(final_pack)
+            
+            # Log action
+            log_msg = f"تم تصدير الكود المصدري لويندوز (عدد الملفات: {len(files)}, الحجم: {len(final_pack)} حرف) إلى {save_path}"
+            self.db.log_action("success", log_msg)
+            self.logAdded.emit("success", log_msg)
+            self.notificationSent.emit(
+                "التصدير الذاتي لويندوز" if self.appLanguage == "ar" else "Windows Self-Export",
+                f"تم نسخ وتصدير {len(files)} ملفات بنجاح إلى الحافظة والملف." if self.appLanguage == "ar" else f"Successfully exported {len(files)} files to clipboard and backup.",
+                "success"
+            )
+            
+            preview = final_pack[:500] + "\n...\n" + final_pack[-200:] if len(final_pack) > 700 else final_pack
+            
+            return json.dumps({
+                "success": True,
+                "file_count": len(files),
+                "char_count": len(final_pack),
+                "save_path": save_path,
+                "preview": preview
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            err_msg = f"خطأ في التصدير الذاتي: {str(e)}"
+            self.db.log_action("error", err_msg)
+            self.logAdded.emit("error", err_msg)
+            return json.dumps({"success": False, "message": err_msg}, ensure_ascii=False)
 
-        final_pack = "".join(result_text)
-        self.clipboard.setText(final_pack)
-        self.db.log_action("success", "تم تصدير وحفظ الكود المصدري للتطبيق في حافظة الويندوز!")
-        self.notificationSent.emit("التصدير الذاتي للمصدر", "تم تجميع ونسخ الكود المصدري للتطبيق بالكامل كحزمة بناء للمطورين.", "success")
-        return final_pack
+    @Slot(str, str, result=str)
+    def export_android_source(self, project_name, custom_save_dir=""):
+        try:
+            # 1. Resolve project directory path
+            proj_path = ""
+            projects = self.db.get_projects()
+            for p in projects:
+                if p["name"] == project_name:
+                    proj_path = p["path"]
+                    break
+            
+            if not proj_path or project_name in ["Default", "الافتراضي"]:
+                proj_path = self._base_dir
+            
+            if not os.path.exists(proj_path):
+                return json.dumps({"success": False, "message": "مسار المشروع غير موجود على القرص!"}, ensure_ascii=False)
+            
+            # 2. Walk directory to find all editable source files, ignoring build/binary dirs
+            files_to_export = []
+            exclude_dirs = {
+                ".git", ".gradle", ".idea", "build", "app/build", "node_modules", 
+                "__pycache__", "venv", "import_binaries", "SmartInbox", "TreeDocs"
+            }
+            allowed_extensions = {
+                ".kt", ".java", ".xml", ".gradle", ".kts", ".json", ".toml", ".txt", ".md", ".properties"
+            }
+            
+            for root_dir, dirs, files in os.walk(proj_path):
+                # Edit dirs in place to prune excluded paths
+                dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.startswith('.')]
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in allowed_extensions:
+                        full_fpath = os.path.join(root_dir, file)
+                        # Skip binary files or super huge files (above 1.5MB)
+                        try:
+                            if os.path.getsize(full_fpath) < 1500000:
+                                # Rel path from proj_path to display nicely in @builder:file
+                                rel_path = os.path.relpath(full_fpath, proj_path)
+                                files_to_export.append((full_fpath, rel_path))
+                        except Exception:
+                            pass
+            
+            if not files_to_export:
+                return json.dumps({"success": False, "message": "لم يتم العثور على أي ملفات برمجية صالحة للتصدير في هذا المجلد!"}, ensure_ascii=False)
+            
+            # 3. Construct package
+            result_text = []
+            result_text.append("// =========================================================\n")
+            result_text.append(f"// 📥 حزمة تصدير مشروع أندرويد: {project_name}\n")
+            result_text.append(f"// تاريخ التصدير: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            result_text.append("// =========================================================\n\n")
+            
+            for full_fpath, rel_path in sorted(files_to_export, key=lambda x: x[1]):
+                try:
+                    with open(full_fpath, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    # Standard builder format
+                    result_text.append(f"// @builder:file {rel_path}\n")
+                    result_text.append(content)
+                    if not content.endswith("\n"):
+                        result_text.append("\n")
+                    result_text.append("// @builder:end\n\n")
+                except Exception as e:
+                    print(f"Error reading {rel_path}: {e}")
+            
+            final_pack = "".join(result_text)
+            
+            # Copy to Clipboard
+            self.clipboard.setText(final_pack)
+            
+            # Determine save path
+            if custom_save_dir and os.path.exists(custom_save_dir):
+                save_dir = custom_save_dir
+            else:
+                save_dir = os.path.join(self._base_dir, "SmartInbox")
+            
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, "Source_Export.txt")
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(final_pack)
+            
+            # Log action
+            log_msg = f"تم تصدير كود أندرويد للمشروع '{project_name}' (عدد الملفات: {len(files_to_export)}, الحجم: {len(final_pack)} حرف) إلى {save_path}"
+            self.db.log_action("success", log_msg)
+            self.logAdded.emit("success", log_msg)
+            self.notificationSent.emit(
+                "تصدير كود أندرويد" if self.appLanguage == "ar" else "Android Export",
+                f"تم نسخ وتصدير {len(files_to_export)} ملفات بنجاح إلى الحافظة والملف." if self.appLanguage == "ar" else f"Successfully exported {len(files_to_export)} files.",
+                "success"
+            )
+            
+            preview = final_pack[:500] + "\n...\n" + final_pack[-200:] if len(final_pack) > 700 else final_pack
+            
+            return json.dumps({
+                "success": True,
+                "file_count": len(files_to_export),
+                "char_count": len(final_pack),
+                "save_path": save_path,
+                "preview": preview
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            err_msg = f"خطأ أثناء تصدير مشروع أندرويد: {str(e)}"
+            self.db.log_action("error", err_msg)
+            self.logAdded.emit("error", err_msg)
+            return json.dumps({"success": False, "message": err_msg}, ensure_ascii=False)
+
+    @Slot(result=str)
+    def export_app_own_source(self):
+        res_json = self.export_windows_source()
+        try:
+            res = json.loads(res_json)
+            if res.get("success"):
+                with open(res["save_path"], "r", encoding="utf-8") as f:
+                    return f.read()
+        except Exception:
+            pass
+        return ""
 
     # --- Local File Browser System ---
     @Slot(str, result=str)

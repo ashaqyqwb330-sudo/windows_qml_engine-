@@ -91,6 +91,7 @@ ApplicationWindow {
             "tab_quick": { "ar": "الإجراءات السريعة", "en": "Quick Actions Hub" },
             "tab_link_automator": { "ar": "مؤتمت الروابط والدردشات", "en": "Link & Chat Automator" },
             "tab_projects_advanced": { "ar": "إدارة المشاريع المتقدمة", "en": "Advanced Project Manager" },
+            "tab_source_export": { "ar": "التصدير الذاتي للمصدر", "en": "Developer Self-Exporter" },
             "tab_prompts": { "ar": "مستودع التوجيهات", "en": "AIPromptHub Guide" },
             "tab_help": { "ar": "مركز المساعدة الدعم", "en": "Help & Learning Center" },
             "tab_browser": { "ar": "متصفح الملفات المحلي", "en": "Local File Browser" },
@@ -611,7 +612,8 @@ ApplicationWindow {
                                 { "icon": "🛡️", "key": "tab_status_dash", "idx": 10 },
                                 { "icon": "📊", "key": "tab_dashboard", "idx": 11 },
                                 { "icon": "🔗", "key": "tab_link_automator", "idx": 12 },
-                                { "icon": "📁", "key": "tab_projects_advanced", "idx": 13 }
+                                { "icon": "📁", "key": "tab_projects_advanced", "idx": 13 },
+                                { "icon": "📤", "key": "tab_source_export", "idx": 14 }
                             ]
                             
                             Button {
@@ -2263,6 +2265,12 @@ ApplicationWindow {
 
         // TAB 13: Advanced Projects Screen
         ProjectsScreen {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
+
+        // TAB 14: Source Export Screen
+        SourceExportScreen {
             Layout.fillWidth: true
             Layout.fillHeight: true
         }
