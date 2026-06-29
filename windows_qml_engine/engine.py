@@ -27,6 +27,13 @@ class EngineBackend(QObject):
     dbUpdated = Signal()                    # database modification trigger
     notificationSent = Signal(str, str, str) # title, message, type (success, warning, info)
     
+    # Property Change Notifications
+    baseDirChanged = Signal(str)
+    activeThemeChanged = Signal(str)
+    appLanguageChanged = Signal(str)
+    bubbleEnabledChanged = Signal(bool)
+    activeProjectChanged = Signal(str)
+    
     # Link Automator Signals
     linkProgress = Signal(int, str)                     # percentage, status_message
     linkProcessingFinished = Signal(bool, str, int, int, str) # success, message, code_count, text_count, saved_files_summary
@@ -66,6 +73,7 @@ class EngineBackend(QObject):
         self._active_theme = self.db.get_setting("active_theme", "golden_slate")
         self._app_language = self.db.get_setting("language", "ar") # ar/en
         self._bubble_enabled = self.db.get_setting("bubble_enabled", "true").lower() == "true"
+        self._active_project = "Default"
 
         # Clipboard Monitor setup
         self._last_clipboard_text = ""
@@ -73,7 +81,7 @@ class EngineBackend(QObject):
         self.clipboard.dataChanged.connect(self.on_clipboard_changed)
 
     # --- Properties ---
-    @Property(str)
+    @Property(str, notify=baseDirChanged)
     def baseDir(self):
         return self._base_dir
 
@@ -89,10 +97,11 @@ class EngineBackend(QObject):
             self.db.log_action("info", f"تم تحديث مجلد العمل والتحويل لقاعدة البيانات الجديدة: {self._base_dir}")
             self.logAdded.emit("info", f"تم تحديث مجلد العمل النشط إلى: {self._base_dir}")
             self.dbUpdated.emit()
+            self.baseDirChanged.emit(self._base_dir)
         else:
             self.logAdded.emit("error", f"المجلد غير موجود: {val}")
 
-    @Property(str)
+    @Property(str, notify=activeThemeChanged)
     def activeTheme(self):
         return self._active_theme
 
@@ -101,8 +110,9 @@ class EngineBackend(QObject):
         self._active_theme = val
         self.db.set_setting("active_theme", val)
         self.dbUpdated.emit()
+        self.activeThemeChanged.emit(val)
 
-    @Property(str)
+    @Property(str, notify=appLanguageChanged)
     def appLanguage(self):
         return self._app_language
 
@@ -111,8 +121,9 @@ class EngineBackend(QObject):
         self._app_language = val
         self.db.set_setting("language", val)
         self.dbUpdated.emit()
+        self.appLanguageChanged.emit(val)
 
-    @Property(bool)
+    @Property(bool, notify=bubbleEnabledChanged)
     def bubbleEnabled(self):
         return self._bubble_enabled
 
@@ -121,6 +132,16 @@ class EngineBackend(QObject):
         self._bubble_enabled = val
         self.db.set_setting("bubble_enabled", str(val).lower())
         self.dbUpdated.emit()
+        self.bubbleEnabledChanged.emit(val)
+
+    @Property(str, notify=activeProjectChanged)
+    def activeProject(self):
+        return self._active_project
+
+    @activeProject.setter
+    def activeProject(self, val):
+        self._active_project = val
+        self.activeProjectChanged.emit(val)
 
     @Slot(str, result=str)
     def clean_path_url(self, url):
@@ -2419,3 +2440,87 @@ class EngineBackend(QObject):
             return True
         except Exception:
             return False
+
+    @Slot(str, str)
+    def log_action(self, log_type, message):
+        try:
+            self.db.log_action(log_type, message)
+            self.dbUpdated.emit()
+        except Exception as e:
+            print(f"Error logging action: {e}")
+
+    @Slot(str, result=str)
+    def read_file_text(self, path):
+        return self.read_local_file(path)
+
+    @Slot(result=bool)
+    def is_clipboard_monitor_running(self):
+        return self._clipboard_monitor_enabled
+
+    @Slot(result=bool)
+    def is_gemini_api_configured(self):
+        return self.get_gemini_api_key() != ""
+
+    @Slot(result=bool)
+    def is_bubble_enabled(self):
+        return self._bubble_enabled
+
+    @Slot(result=str)
+    def get_active_project(self):
+        return self._active_project
+
+    @Slot(result=int)
+    def get_logs_count(self):
+        try:
+            with self.db.get_connection() as conn:
+                count = conn.cursor().execute("SELECT COUNT(*) FROM action_logs").fetchone()[0]
+                return count
+        except Exception:
+            return 0
+
+    @Slot(result=str)
+    def get_system_health(self):
+        import json
+        import platform
+        try:
+            health_data = {
+                "clipboard_monitor": "Running" if self._clipboard_monitor_enabled else "Stopped",
+                "gemini_api": "Configured" if self.get_gemini_api_key() != "" else "Missing Key",
+                "bubble": "Enabled" if self._bubble_enabled else "Disabled",
+                "active_project": self._active_project,
+                "logs_count": self.get_logs_count(),
+                "os": platform.system(),
+                "os_release": platform.release(),
+                "python_version": platform.python_version(),
+                "projects_count": len(self.db.get_projects()),
+                "styles_count": len(self.db.get_styles()),
+                "captures_count": len(self.db.get_captures())
+            }
+            return json.dumps(health_data, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    @Slot(result=str)
+    def run_quick_self_test(self):
+        import json
+        try:
+            db_ok = True
+            try:
+                self.db.get_setting("test", "test")
+            except Exception:
+                db_ok = False
+                
+            dir_ok = os.path.exists(self._base_dir)
+            key_configured = self.get_gemini_api_key() != ""
+            
+            report = {
+                "database_ok": db_ok,
+                "base_dir_ok": dir_ok,
+                "gemini_api_ok": key_configured,
+                "clipboard_monitor_ok": self._clipboard_monitor_enabled,
+                "bubble_ok": self._bubble_enabled,
+                "status": "Healthy" if (db_ok and dir_ok) else "Issues Detected"
+            }
+            return json.dumps(report, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)}, ensure_ascii=False)

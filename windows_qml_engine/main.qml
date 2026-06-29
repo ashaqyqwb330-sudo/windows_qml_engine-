@@ -240,6 +240,7 @@ ApplicationWindow {
         for (var i = 0; i < projectsModel.count; i++) {
             if (projectsModel.get(i).name === projectName) {
                 projectSelector.currentIndex = i;
+                backend.activeProject = projectName;
                 backend.log_action("info", "تم تفعيل المشروع: " + projectName);
                 return true;
             }
@@ -500,6 +501,29 @@ ApplicationWindow {
                         }
                     }
                     implicitWidth: 140
+                }
+            }
+
+            // Service Status Dashboard Trigger
+            Button {
+                text: "🩺"
+                Layout.preferredHeight: 38
+                Layout.preferredWidth: 38
+                hoverEnabled: true
+                ToolTip.visible: hovered
+                ToolTip.text: backend.appLanguage === "ar" ? "حالة الخدمة والصحة" : "Service Status & Health"
+                onClicked: statusDashboardDialog.open()
+                background: Rectangle {
+                    color: parent.hovered ? borderSlate : "transparent"
+                    border.color: parent.hovered ? metallicGold : borderSlate
+                    border.width: 1
+                    radius: 8
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font.pixelSize: 18
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
 
@@ -2177,7 +2201,6 @@ ApplicationWindow {
                     }
                 }
             }
-        }
 
         // TAB 12: Link & Chat Automator Screen
         LinkAutomatorScreen {
@@ -2197,6 +2220,7 @@ ApplicationWindow {
             Layout.fillHeight: true
         }
     }
+}
 
     // Bottom Status Bar
     Rectangle {
@@ -2361,5 +2385,9 @@ ApplicationWindow {
                 background: null
             }
         }
+    }
+
+    StatusDashboardDialog {
+        id: statusDashboardDialog
     }
 }
