@@ -504,6 +504,29 @@ ApplicationWindow {
                 }
             }
 
+            // Permissions Dashboard Trigger
+            Button {
+                text: "🛡️"
+                Layout.preferredHeight: 38
+                Layout.preferredWidth: 38
+                hoverEnabled: true
+                ToolTip.visible: hovered
+                ToolTip.text: backend.appLanguage === "ar" ? "لوحة الأذونات والصلاحيات" : "Permissions & Privileges"
+                onClicked: permissionsDashboardDialog.open()
+                background: Rectangle {
+                    color: parent.hovered ? borderSlate : "transparent"
+                    border.color: parent.hovered ? metallicGold : borderSlate
+                    border.width: 1
+                    radius: 8
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font.pixelSize: 18
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
             // Service Status Dashboard Trigger
             Button {
                 text: "🩺"
@@ -2389,5 +2412,9 @@ ApplicationWindow {
 
     StatusDashboardDialog {
         id: statusDashboardDialog
+    }
+
+    PermissionsDashboardDialog {
+        id: permissionsDashboardDialog
     }
 }

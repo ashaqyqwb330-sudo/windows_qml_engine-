@@ -2610,3 +2610,83 @@ class EngineBackend(QObject):
             return json.dumps(full_data, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    def _open_uri(self, uri):
+        import platform
+        import subprocess
+        import os
+        try:
+            system = platform.system()
+            if system == "Windows":
+                os.startfile(uri)
+            elif system == "Darwin":
+                subprocess.Popen(["open", uri])
+            else:
+                subprocess.Popen(["xdg-open", uri])
+            return True
+        except Exception as e:
+            print(f"Error opening URI {uri}: {e}")
+            return False
+
+    @Slot(result=bool)
+    def is_admin(self):
+        try:
+            import os
+            if hasattr(os, 'getuid'):
+                return os.getuid() == 0
+            else:
+                import ctypes
+                return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            return False
+
+    @Slot(result=bool)
+    def has_full_filesystem_access(self):
+        try:
+            import os
+            return os.access(self._base_dir, os.W_OK)
+        except Exception:
+            return False
+
+    @Slot(result=bool)
+    def has_overlay_permission(self):
+        # Desktop systems allow drawing overlay bubbles if configured
+        return True
+
+    @Slot(result=bool)
+    def has_notification_permission(self):
+        # Desktop systems have notification channels enabled by default
+        return True
+
+    @Slot(result=bool)
+    def open_admin_settings(self):
+        # Developer / privilege options URI
+        return self._open_uri("ms-settings:developers")
+
+    @Slot(result=bool)
+    def open_filesystem_settings(self):
+        # Broad filesystem access or privacy settings
+        return self._open_uri("ms-settings:privacy-broadfilesystemaccess") or self._open_uri("ms-settings:privacy")
+
+    @Slot(result=bool)
+    def open_overlay_settings(self):
+        # Return developers panel as related setup
+        return self._open_uri("ms-settings:developers")
+
+    @Slot(result=bool)
+    def open_notification_settings(self):
+        return self._open_uri("ms-settings:notifications")
+
+    @Slot(result=str)
+    def get_permissions_status(self):
+        import json
+        try:
+            status = {
+                "admin": self.is_admin(),
+                "filesystem": self.has_full_filesystem_access(),
+                "overlay": self.has_overlay_permission(),
+                "notifications": self.has_notification_permission()
+            }
+            return json.dumps(status, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)}, ensure_ascii=False)

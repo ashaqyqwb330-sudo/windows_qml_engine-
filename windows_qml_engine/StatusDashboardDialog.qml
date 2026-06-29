@@ -35,6 +35,7 @@ Dialog {
             "btn_test": { "ar": "فحص سريع للنظام ⚡", "en": "Run Quick Self-Test ⚡" },
             "btn_refresh": { "ar": "تحديث فوري 🔄", "en": "Force Refresh 🔄" },
             "btn_close": { "ar": "إغلاق النافذة ❌", "en": "Close Window ❌" },
+            "btn_permissions": { "ar": "إدارة الأذونات 🛡️", "en": "Permissions 🛡️" },
             "active": { "ar": "نشط 🟢", "en": "Active 🟢" },
             "inactive": { "ar": "معطل 🔴", "en": "Inactive 🔴" },
             "configured": { "ar": "تم التكوين ✅", "en": "Configured ✅" },
@@ -446,6 +447,14 @@ Dialog {
                         } catch (e) {
                             root.selfTestOutput = rawReport
                         }
+                    }
+                }
+
+                Button {
+                    text: root.getTxt("btn_permissions")
+                    implicitWidth: 120
+                    onClicked: {
+                        permissionsDashboardDialog.open()
                     }
                 }
 
