@@ -91,6 +91,10 @@ class EngineBackend(QObject):
         self.clipboard = QGuiApplication.clipboard()
         self.clipboard.dataChanged.connect(self.on_clipboard_changed)
 
+        # Smart Task Queue setup
+        self._tasks = []
+        self._task_id_counter = 1
+
     # --- Properties ---
     @Property(str, notify=baseDirChanged)
     def baseDir(self):
@@ -229,12 +233,30 @@ class EngineBackend(QObject):
             text = self.clipboard.text()
             if text and text != self._last_clipboard_text:
                 self._last_clipboard_text = text
-                # Detect package markers
-                if "@builder:file" in text and "@builder:end" in text:
-                    self.clipboardBuilderDetected.emit(text)
-                    self.db.log_action("info", "📋 تم رصد حزمة بناء صالحة ومعالجة مسبقة في الحافظة!")
-                    self.logAdded.emit("success", "📋 تم رصد حزمة بناء برمجية جاهزة للتثبيت!")
-                    self.notificationSent.emit("مراقب الحافظة", "تم الكشف تلقائياً عن حزمة بناء برمجية صالحة في حافظة الويندوز.", "info")
+                
+                # Check min length constraint
+                min_len = int(self.db.get_setting("min_clip_length", "10"))
+                if len(text) >= min_len:
+                    # Classify
+                    clip_type = "text"
+                    theme = "slate"
+                    if "@builder:file" in text and "@builder:end" in text:
+                        clip_type = "builder"
+                        theme = "gold"
+                        self.clipboardBuilderDetected.emit(text)
+                        self.db.log_action("info", "📋 تم رصد حزمة بناء صالحة ومعالجة مسبقة في الحافظة!")
+                        self.logAdded.emit("success", "📋 تم رصد حزمة بناء برمجية جاهزة للتثبيت!")
+                        self.notificationSent.emit("مراقب الحافظة", "تم الكشف تلقائياً عن حزمة بناء برمجية صالحة في حافظة الويندوز.", "info")
+                    elif text.startswith("http://") or text.startswith("https://"):
+                        clip_type = "url"
+                        theme = "gold"
+                    elif any(kw in text for kw in ["def ", "class ", "import ", "function", "const ", "let ", "var ", "<?php", "<html>"]):
+                        clip_type = "code"
+                        theme = "space"
+                        
+                    title = f"Clipboard: {text[:40].strip()}..." if len(text) > 40 else f"Clipboard: {text.strip()}"
+                    self.db.add_capture(title, text, f"clip_{clip_type}", "", theme)
+                    self.dbUpdated.emit()
         except Exception as e:
             print(f"Clipboard monitoring error: {e}")
 
@@ -2916,3 +2938,335 @@ class EngineBackend(QObject):
                 return json.dumps({"success": False, "message": "unknown_action"}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": f"Error: {str(e)}"}, ensure_ascii=False)
+
+    # --- Smart Task Queue Slots ---
+    @Slot(str, str, str, result=str)
+    def add_task(self, title, task_type, command):
+        task_id = str(self._task_id_counter)
+        self._task_id_counter += 1
+        new_task = {
+            "id": task_id,
+            "title": title,
+            "type": task_type,
+            "command": command,
+            "status": "pending",
+            "output": "",
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        self._tasks.append(new_task)
+        self.db.log_action("info", f"🛠️ تم إضافة مهمة ذكية جديدة لطابور العمليات: {title}")
+        self.dbUpdated.emit()
+        return task_id
+
+    @Slot(result=str)
+    def get_tasks_json(self):
+        return json.dumps(self._tasks, ensure_ascii=False)
+
+    @Slot(str)
+    def run_task_async(self, task_id):
+        task = None
+        for t in self._tasks:
+            if t["id"] == task_id:
+                task = t
+                break
+        if not task:
+            return
+            
+        task["status"] = "running"
+        task["output"] = "Running task command...\n"
+        self.dbUpdated.emit()
+        
+        def run_thread():
+            try:
+                cmd = task["command"]
+                if not cmd:
+                    task["status"] = "completed"
+                    task["output"] += "No command to execute."
+                    self.dbUpdated.emit()
+                    return
+                    
+                process = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=self._base_dir
+                )
+                stdout, stderr = process.communicate()
+                task["output"] += f"STDOUT:\n{stdout}\n"
+                if stderr:
+                    task["output"] += f"STDERR:\n{stderr}\n"
+                
+                if process.returncode == 0:
+                    task["status"] = "completed"
+                    self.db.log_action("success", f"✅ اكتملت المهمة الذكية بنجاح: {task['title']}")
+                else:
+                    task["status"] = "failed"
+                    self.db.log_action("error", f"❌ فشلت المهمة الذكية: {task['title']} (رمز الخروج: {process.returncode})")
+            except Exception as e:
+                task["status"] = "failed"
+                task["output"] += f"Error executing task: {str(e)}\n"
+                self.db.log_action("error", f"❌ فشلت المهمة الذكية بسبب خطأ داخلي: {task['title']}")
+            finally:
+                self.dbUpdated.emit()
+                
+        threading.Thread(target=run_thread, daemon=True).start()
+
+    @Slot(str)
+    def delete_task(self, task_id):
+        self._tasks = [t for t in self._tasks if t["id"] != task_id]
+        self.dbUpdated.emit()
+
+    @Slot()
+    def clear_completed_tasks(self):
+        self._tasks = [t for t in self._tasks if t["status"] not in ["completed", "failed"]]
+        self.dbUpdated.emit()
+
+    # --- Clipboard History Slots ---
+    @Slot(str, str, result=str)
+    def get_clipboard_history_json(self, filter_type="all", search_query=""):
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                query = "SELECT * FROM smart_captures WHERE capture_type LIKE 'clip_%'"
+                params = []
+                if filter_type != "all":
+                    query += " AND capture_type = ?"
+                    params.append(f"clip_{filter_type}")
+                if search_query:
+                    query += " AND (title LIKE ? OR content LIKE ?)"
+                    params.append(f"%{search_query}%")
+                    params.append(f"%{search_query}%")
+                query += " ORDER BY id DESC"
+                rows = cursor.execute(query, params).fetchall()
+                return json.dumps([dict(r) for r in rows], ensure_ascii=False)
+        except Exception as e:
+            print(f"Error reading clipboard history: {e}")
+            return json.dumps([], ensure_ascii=False)
+
+    @Slot(int)
+    def delete_clipboard_entry(self, entry_id):
+        try:
+            with self.db.get_connection() as conn:
+                conn.cursor().execute("DELETE FROM smart_captures WHERE id = ?", (entry_id,))
+                conn.commit()
+            self.dbUpdated.emit()
+        except Exception as e:
+            print(f"Error deleting entry: {e}")
+
+    # --- Advanced Logs Export & Stats ---
+    @Slot(str, str, result=str)
+    def export_logs_advanced(self, format_type, options_json):
+        try:
+            options = json.loads(options_json)
+            hide_sensitive = options.get("hide_sensitive", True)
+            theme = options.get("html_theme", "gold")
+            save_dir = options.get("save_dir", self._base_dir)
+            
+            logs = self.db.get_logs()
+            
+            # Sanitize if hide_sensitive
+            if hide_sensitive:
+                sanitized_logs = []
+                for log in logs:
+                    msg = log["message"]
+                    import re
+                    msg = re.sub(r'AIzaSy[A-Za-z0-9_\-]{33}', 'AIzaSy[MASKED]', msg)
+                    log_copy = dict(log)
+                    log_copy["message"] = msg
+                    sanitized_logs.append(log_copy)
+                logs = sanitized_logs
+
+            filename = f"action_logs_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            if format_type == "html":
+                filename += ".html"
+                filepath = os.path.join(save_dir, filename)
+                
+                bg_color = "#0F131D"
+                card_bg = "#151B26"
+                text_color = "#D1D5DB"
+                accent_color = "#D4AF37"
+                
+                if theme == "light":
+                    bg_color = "#F3F4F6"
+                    card_bg = "#FFFFFF"
+                    text_color = "#1F2937"
+                    accent_color = "#3B82F6"
+                elif theme == "dark":
+                    bg_color = "#000000"
+                    card_bg = "#111111"
+                    text_color = "#E5E7EB"
+                    accent_color = "#9CA3AF"
+                
+                html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Golden Platform Action Logs Report</title>
+    <style>
+        body {{
+            background-color: {bg_color};
+            color: {text_color};
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 40px;
+        }}
+        h1 {{
+            color: {accent_color};
+            border-bottom: 2px solid {accent_color};
+            padding-bottom: 10px;
+        }}
+        .summary {{
+            background-color: {card_bg};
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }}
+        th, td {{
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #2D3748;
+        }}
+        th {{
+            background-color: {accent_color};
+            color: #000;
+            font-weight: bold;
+        }}
+        tr:hover {{
+            background-color: {card_bg};
+        }}
+        .badge {{
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        }}
+        .success {{ background-color: #10B981; color: white; }}
+        .error {{ background-color: #EF4444; color: white; }}
+        .info {{ background-color: #3B82F6; color: white; }}
+        .warning {{ background-color: #F59E0B; color: white; }}
+    </style>
+</head>
+<body>
+    <h1>📋 Golden Platform Pro Action Logs</h1>
+    <div class="summary">
+        <h3>Report Summary</h3>
+        <p><strong>Generated At:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        <p><strong>Total Recorded Entries:</strong> {len(logs)}</p>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Timestamp</th>
+                <th>Log Message</th>
+            </tr>
+        </thead>
+        <tbody>
+"""
+                for log in logs:
+                    badge_class = "info"
+                    if log["type"] == "success":
+                        badge_class = "success"
+                    elif log["type"] == "error":
+                        badge_class = "error"
+                    elif log["type"] == "warning":
+                        badge_class = "warning"
+                    
+                    html_content += f"""            <tr>
+                <td>{log['id']}</td>
+                <td><span class="badge {badge_class}">{log['type'].upper()}</span></td>
+                <td>{log['created_at']}</td>
+                <td>{log['message']}</td>
+            </tr>\n"""
+                
+                html_content += """        </tbody>
+    </table>
+</body>
+</html>"""
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+                    
+            elif format_type == "txt":
+                filename += ".txt"
+                filepath = os.path.join(save_dir, filename)
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(f"=== Golden Platform Action Logs Report ===\n")
+                    f.write(f"Generated At: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Total Entries: {len(logs)}\n\n")
+                    for log in logs:
+                        f.write(f"[{log['created_at']}] [{log['type'].upper()}] - {log['message']}\n")
+                        
+            elif format_type == "csv":
+                filename += ".csv"
+                filepath = os.path.join(save_dir, filename)
+                import csv
+                with open(filepath, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["ID", "Type", "Timestamp", "Message"])
+                    for log in logs:
+                        writer.writerow([log["id"], log["type"], log["created_at"], log["message"]])
+                        
+            elif format_type == "json":
+                filename += ".json"
+                filepath = os.path.join(save_dir, filename)
+                with open(filepath, "w", encoding="utf-8") as f:
+                    json.dump(logs, f, indent=4, ensure_ascii=False)
+            else:
+                return json.dumps({"success": False, "error": "Unknown format type"}, ensure_ascii=False)
+                
+            self.db.log_action("success", f"📊 تم تصدير السجلات بنجاح إلى: {filename}")
+            return json.dumps({"success": True, "filepath": filepath, "filename": filename}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(result=str)
+    def get_advanced_logs_stats(self):
+        try:
+            logs = self.db.get_logs()
+            total = len(logs)
+            if total == 0:
+                return json.dumps({
+                    "total": 0,
+                    "success": 0,
+                    "error": 0,
+                    "info": 0,
+                    "warning": 0,
+                    "success_rate": 0,
+                    "most_active": "N/A"
+                }, ensure_ascii=False)
+                
+            success = sum(1 for l in logs if l["type"] == "success")
+            error = sum(1 for l in logs if l["type"] == "error")
+            info = sum(1 for l in logs if l["type"] == "info")
+            warning = sum(1 for l in logs if l["type"] == "warning")
+            other = total - (success + error + info + warning)
+            
+            success_rate = round((success / total) * 100, 1) if total > 0 else 0
+            
+            type_counts = {}
+            for l in logs:
+                t = l["type"]
+                type_counts[t] = type_counts.get(t, 0) + 1
+            most_active = max(type_counts, key=type_counts.get) if type_counts else "N/A"
+            
+            return json.dumps({
+                "total": total,
+                "success": success,
+                "error": error,
+                "info": info,
+                "warning": warning + other,
+                "success_rate": success_rate,
+                "most_active": most_active.upper()
+            }, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error computing advanced stats: {e}")
+            return json.dumps({"total": 0, "success": 0, "error": 0, "info": 0, "warning": 0, "success_rate": 0, "most_active": "Error"}, ensure_ascii=False)

@@ -30,6 +30,18 @@ ApplicationWindow {
     readonly property color errorRed: "#EF4444"
     readonly property color textGray: "#64748B"
 
+    // Mock backward compatibility helpers
+    property int projectSelectorCurrentIndex: 0
+    QtObject {
+        id: projectSelector
+        property string currentText: backend.activeProject
+        property alias currentIndex: window.projectSelectorCurrentIndex
+    }
+    QtObject {
+        id: codeTextArea
+        property string text: ""
+    }
+
     // Theme Selector Loader
     function loadThemeColors(themeId) {
         var themes = {
@@ -758,117 +770,10 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            // TAB 0: Extractor / Code Parser
-            Rectangle {
-                color: "transparent"
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 20
-                    spacing: 12
-
-                    RowLayout {
-                        Text {
-                            text: "⚙️ " + getTxt("tab_extractor")
-                            color: metallicGold
-                            font.bold: true
-                            font.pixelSize: 18
-                        }
-                        Spacer { Layout.fillWidth: true }
-                        
-                        Text { text: getTxt("project_selector_lbl"); color: textSilver; font.pixelSize: 11 }
-                        ComboBox {
-                            id: projectSelector
-                            model: projectsModel
-                            textRole: "name"
-                            implicitWidth: 150
-                        }
-                    }
-
-                    // Dynamic floating Clipboard Builder banner overlay
-                    Rectangle {
-                        id: clipboardBannerRect
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 45
-                        color: borderSlate
-                        border.color: metallicGold
-                        radius: 8
-                        visible: clipboardBannerText.text !== ""
-                        
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 15
-                            anchors.rightMargin: 15
-                            
-                            Text {
-                                id: clipboardBannerText
-                                text: ""
-                                color: textSilver
-                                font.bold: true
-                                font.pixelSize: 12
-                            }
-                            Spacer { Layout.fillWidth: true }
-                            Button {
-                                text: backend.appLanguage === "ar" ? "تطبيق الحزمة البرمجية ⚡" : "Apply Builder Pack ⚡"
-                                implicitHeight: 28
-                                onClicked: {
-                                    codeTextArea.text = clipboardBannerRect.tagText
-                                    backend.process_text_directives_for_project(clipboardBannerRect.tagText, projectSelector.currentText)
-                                    clipboardBannerText.text = ""
-                                }
-                            }
-                            Button {
-                                text: backend.appLanguage === "ar" ? "تجاهل ❌" : "Ignore ❌"
-                                implicitHeight: 28
-                                onClicked: clipboardBannerText.text = ""
-                            }
-                        }
-                        property string tagText: ""
-                    }
-
-                    // Standard code text area with scroll bars
-                    ScrollView {
-                        id: codeScrollView
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        TextArea {
-                            id: codeTextArea
-                            placeholderText: getTxt("placeholder_extractor")
-                            color: textSilver
-                            font.family: "Consolas"
-                            font.pixelSize: 12
-                            background: Rectangle {
-                                color: cardSlateBg
-                                border.color: borderSlate
-                                border.width: 1
-                                radius: 8
-                            }
-                            selectByMouse: true
-                            wrapMode: TextEdit.Wrap
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 12
-                        Button {
-                            text: getTxt("btn_apply")
-                            Layout.preferredWidth: 200
-                            Layout.preferredHeight: 44
-                            onClicked: {
-                                backend.process_text_directives_for_project(codeTextArea.text, projectSelector.currentText)
-                            }
-                        }
-                        Button {
-                            text: getTxt("btn_sample")
-                            onClicked: {
-                                codeTextArea.text = "// @builder:file tests/app_v2.py\nprint('Golden Platform Pro Engine running safe code!')\n// @builder:end\n\n// @executor: python tests/app_v2.py"
-                            }
-                        }
-                        Button {
-                            text: getTxt("btn_clear")
-                            onClicked: codeTextArea.text = ""
-                        }
-                    }
-                }
+            // TAB 0: Extractor / Code Parser / Intelligent Monitor
+            MonitorScreen {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
             // TAB 1: Directory Packaging Tool
