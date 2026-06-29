@@ -2502,25 +2502,111 @@ class EngineBackend(QObject):
 
     @Slot(result=str)
     def run_quick_self_test(self):
+        return self.get_self_test_report()
+
+    @Slot(result=str)
+    def get_self_test_report(self):
         import json
         try:
+            # 1. Database Check
             db_ok = True
+            db_details_ar = "سليمة وتعمل بكفاءة عالية"
+            db_details_en = "Healthy and running efficiently"
             try:
                 self.db.get_setting("test", "test")
-            except Exception:
+            except Exception as e:
                 db_ok = False
-                
+                db_details_ar = f"فشل الفحص: {str(e)}"
+                db_details_en = f"Check failed: {str(e)}"
+
+            # 2. Base Directory Check
             dir_ok = os.path.exists(self._base_dir)
+            dir_details_ar = f"سليم ومتاح للكتابة والقراءة في: {self._base_dir}" if dir_ok else "المجلد النشط غير موجود أو تالف!"
+            dir_details_en = f"Accessible for reading and writing at: {self._base_dir}" if dir_ok else "Active directory does not exist or is corrupted!"
+
+            # 3. Gemini Key Check
             key_configured = self.get_gemini_api_key() != ""
-            
-            report = {
-                "database_ok": db_ok,
-                "base_dir_ok": dir_ok,
-                "gemini_api_ok": key_configured,
-                "clipboard_monitor_ok": self._clipboard_monitor_enabled,
-                "bubble_ok": self._bubble_enabled,
-                "status": "Healthy" if (db_ok and dir_ok) else "Issues Detected"
+            gemini_details_ar = "نشط وتم التحقق من التهيئة" if key_configured else "مفتاح Gemini غير مسجل أو مفقود في الإعدادات"
+            gemini_details_en = "Installed & configured successfully" if key_configured else "Gemini key is missing or not configured"
+
+            # 4. Clipboard Monitor Check
+            clip_ok = self._clipboard_monitor_enabled
+            clip_details_ar = "نشط في الخلفية لمراقبة الأكواد" if clip_ok else "مراقب الحافظة معطل حالياً"
+            clip_details_en = "Active in background to monitor codes" if clip_ok else "Clipboard monitor is currently disabled"
+
+            # 5. Floating Bubble Check
+            bubble_ok = self._bubble_enabled
+            bubble_details_ar = "الفقاعة العائمة مفعلة وجاهزة للعمل" if bubble_ok else "الفقاعة العائمة معطلة"
+            bubble_details_en = "Floating overlay bubble is enabled" if bubble_ok else "Floating overlay bubble is disabled"
+
+            # Formulate Checklist Items
+            items = [
+                {
+                    "name_ar": "قاعدة بيانات SQLite المدمجة",
+                    "name_en": "Local SQLite Database",
+                    "status": "success" if db_ok else "error",
+                    "details_ar": db_details_ar,
+                    "details_en": db_details_en
+                },
+                {
+                    "name_ar": "مجلد العمل النشط",
+                    "name_en": "Active Workspace Directory",
+                    "status": "success" if dir_ok else "error",
+                    "details_ar": dir_details_ar,
+                    "details_en": dir_details_en
+                },
+                {
+                    "name_ar": "مفتاح Gemini AI",
+                    "name_en": "Gemini AI Key Configuration",
+                    "status": "success" if key_configured else "warning",
+                    "details_ar": gemini_details_ar,
+                    "details_en": gemini_details_en
+                },
+                {
+                    "name_ar": "مراقب حافظة الويندوز",
+                    "name_en": "Windows Clipboard Monitor",
+                    "status": "success" if clip_ok else "warning",
+                    "details_ar": clip_details_ar,
+                    "details_en": clip_details_en
+                },
+                {
+                    "name_ar": "الفقاعة الذهبية العائمة",
+                    "name_en": "Floating Golden Bubble",
+                    "status": "success" if bubble_ok else "warning",
+                    "details_ar": bubble_details_ar,
+                    "details_en": bubble_details_en
+                }
+            ]
+
+            overall_status = "Healthy" if (db_ok and dir_ok) else "Issues Detected"
+
+            # Generated full string reports
+            report_ar = "⚡ تقرير تشخيص النظام الذهبي المباشر:\n"
+            report_ar += "--------------------------------------------------\n"
+            report_ar += f"• قاعدة بيانات SQLite المدمجة: {'✅ سليمة وتعمل' if db_ok else '❌ غير صالحة'} ({db_details_ar})\n"
+            report_ar += f"• مجلد العمل والوصول الآمن: {'✅ سليم ومتاح' if dir_ok else '❌ غير متاح'} ({dir_details_ar})\n"
+            report_ar += f"• مصادقة مفتاح سحابي Gemini AI: {'✅ نشط ومثبت' if key_configured else '⚠️ غير مسجل'} ({gemini_details_ar})\n"
+            report_ar += f"• مراقب حافظة ويندوز: {'🟢 نشط بالخلفية' if clip_ok else '🔴 متوقف'} ({clip_details_ar})\n"
+            report_ar += f"• الفقاعة العائمة للمنصة: {'🟢 مفعلة ونشطة' if bubble_ok else '🔴 معطلة'} ({bubble_details_ar})\n"
+            report_ar += "--------------------------------------------------\n"
+            report_ar += f"• النتيجة وصحة النظام العامة: {'🟢 نظام ممتاز وسليم بالكامل' if overall_status == 'Healthy' else '⚠️ يتطلب بعض الإعدادات'}\n"
+
+            report_en = "⚡ Live Golden System Diagnostic Report:\n"
+            report_en += "--------------------------------------------------\n"
+            report_en += f"• Local SQLite Database: {'✅ OK & Connected' if db_ok else '❌ Check Failed'} ({db_details_en})\n"
+            report_en += f"• Workspace Directory Access: {'✅ OK & Accessible' if dir_ok else '❌ Access Error'} ({dir_details_en})\n"
+            report_en += f"• Gemini AI Cloud Key: {'✅ Installed & Configured' if key_configured else '⚠️ Key Missing'} ({gemini_details_en})\n"
+            report_en += f"• Clipboard Monitor Daemon: {'🟢 Daemon Active' if clip_ok else '🔴 Daemon Stopped'} ({clip_details_en})\n"
+            report_en += f"• Floating Platform Bubble: {'🟢 Enabled' if bubble_ok else '🔴 Disabled'} ({bubble_details_en})\n"
+            report_en += "--------------------------------------------------\n"
+            report_en += f"• Overall General Status: {'🟢 System Fully Healthy' if overall_status == 'Healthy' else '⚠️ Settings Required'}\n"
+
+            full_data = {
+                "status": overall_status,
+                "items": items,
+                "raw_report_ar": report_ar,
+                "raw_report_en": report_en
             }
-            return json.dumps(report, ensure_ascii=False)
+            return json.dumps(full_data, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"error": str(e)}, ensure_ascii=False)

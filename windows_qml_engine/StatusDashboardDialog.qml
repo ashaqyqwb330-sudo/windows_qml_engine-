@@ -429,30 +429,20 @@ Dialog {
                     text: root.getTxt("btn_test")
                     Layout.fillWidth: true
                     onClicked: {
-                        var rawReport = backend.run_quick_self_test()
+                        var rawReport = backend.get_self_test_report()
                         try {
                             var rep = JSON.parse(rawReport)
                             var isAr = (backend.appLanguage === "ar")
-                            var result = ""
-                            if (isAr) {
-                                result += "⚡ تقرير تشخيص النظام الذهبي المباشر:\n"
-                                result += "• قاعدة بيانات SQLite المدمجة: " + (rep.database_ok ? "✅ سليمة وتعمل" : "❌ فشل فحص الجودة") + "\n"
-                                result += "• مجلد العمل والوصول الآمن: " + (rep.base_dir_ok ? "✅ سليم ومتاح" : "❌ غير متاح أو تالف") + "\n"
-                                result += "• مصادقة مفتاح سحابي Gemini AI: " + (rep.gemini_api_ok ? "✅ نشط ومثبت" : "⚠️ مفتاح مفقود أو غير مسجل") + "\n"
-                                result += "• مراقب حافظة ويندوز: " + (rep.clipboard_monitor_ok ? "🟢 نشط بالخلفية" : "🔴 متوقف حالياً") + "\n"
-                                result += "• الفقاعة العائمة للمنصة: " + (rep.bubble_ok ? "🟢 مفعلة ونشطة" : "🔴 معطلة") + "\n"
-                                result += "• النتيجة وصحة النظام العامة: " + (rep.status === "Healthy" ? "🟢 نظام ممتاز وسليم" : "⚠️ يتطلب بعض الإعدادات")
-                            } else {
-                                result += "⚡ Live Golden System Diagnostic Report:\n"
-                                result += "• Local SQLite Database: " + (rep.database_ok ? "✅ OK & Connected" : "❌ Quality Check Failed") + "\n"
-                                result += "• Workspace Directory Access: " + (rep.base_dir_ok ? "✅ OK & Accessible" : "❌ Access Error") + "\n"
-                                result += "• Gemini AI Cloud Key: " + (rep.gemini_api_ok ? "✅ Installed & Configured" : "⚠️ Key Missing") + "\n"
-                                result += "• Clipboard Monitor Daemon: " + (rep.clipboard_monitor_ok ? "🟢 Daemon Active" : "🔴 Daemon Stopped") + "\n"
-                                result += "• Floating Platform Bubble: " + (rep.bubble_ok ? "🟢 Enabled" : "🔴 Disabled") + "\n"
-                                result += "• Overall General Status: " + (rep.status === "Healthy" ? "🟢 System Fully Healthy" : "⚠️ Settings Required")
-                            }
-                            root.selfTestOutput = result
-                            backend.notificationSent(isAr ? "فحص ذاتي" : "Self-Diagnostic", isAr ? "اكتمل فحص حالة الخدمات بنجاح." : "System services diagnostic completed successfully.", "success")
+                            root.selfTestOutput = isAr ? rep.raw_report_ar : rep.raw_report_en
+                            
+                            diagResultDialog.diagnosticDataRaw = rawReport
+                            diagResultDialog.open()
+                            
+                            backend.notificationSent(
+                                isAr ? "فحص ذاتي" : "Self-Diagnostic",
+                                isAr ? "اكتمل فحص حالة الخدمات بنجاح ونقلك للتفاصيل." : "System services diagnostic completed successfully and opened details.",
+                                "success"
+                            )
                         } catch (e) {
                             root.selfTestOutput = rawReport
                         }
@@ -475,5 +465,9 @@ Dialog {
                 }
             }
         }
+    }
+
+    DiagnosticResultDialog {
+        id: diagResultDialog
     }
 }
