@@ -23,9 +23,14 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     path TEXT NOT NULL,
+                    template_json TEXT,
                     created_at TEXT NOT NULL
                 )
             """)
+            try:
+                cursor.execute("ALTER TABLE projects ADD COLUMN template_json TEXT")
+            except sqlite3.OperationalError:
+                pass
             
             # Extracted Files Table
             cursor.execute("""
@@ -93,13 +98,33 @@ class DatabaseManager:
             conn.commit()
 
     # --- Projects Methods ---
-    def add_project(self, name, path):
+    def add_project(self, name, path, template_json=None):
         try:
             with self.get_connection() as conn:
                 conn.cursor().execute(
-                    "INSERT OR REPLACE INTO projects (name, path, created_at) VALUES (?, ?, ?)",
-                    (name, path, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    "INSERT OR REPLACE INTO projects (name, path, template_json, created_at) VALUES (?, ?, ?, ?)",
+                    (name, path, template_json, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 )
+                conn.commit()
+            return True
+        except sqlite3.OperationalError:
+            try:
+                with self.get_connection() as conn:
+                    conn.cursor().execute(
+                        "INSERT OR REPLACE INTO projects (name, path, created_at) VALUES (?, ?, ?)",
+                        (name, path, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    )
+                    conn.commit()
+                return True
+            except Exception:
+                return False
+        except Exception:
+            return False
+
+    def delete_project(self, name):
+        try:
+            with self.get_connection() as conn:
+                conn.cursor().execute("DELETE FROM projects WHERE name = ?", (name,))
                 conn.commit()
             return True
         except Exception:

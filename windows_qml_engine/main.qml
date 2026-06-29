@@ -90,6 +90,7 @@ ApplicationWindow {
             "tab_gemini": { "ar": "مساعد Gemini AI", "en": "Gemini AI Assistant" },
             "tab_quick": { "ar": "الإجراءات السريعة", "en": "Quick Actions Hub" },
             "tab_link_automator": { "ar": "مؤتمت الروابط والدردشات", "en": "Link & Chat Automator" },
+            "tab_projects_advanced": { "ar": "إدارة المشاريع المتقدمة", "en": "Advanced Project Manager" },
             "tab_prompts": { "ar": "مستودع التوجيهات", "en": "AIPromptHub Guide" },
             "tab_help": { "ar": "مركز المساعدة الدعم", "en": "Help & Learning Center" },
             "tab_browser": { "ar": "متصفح الملفات المحلي", "en": "Local File Browser" },
@@ -153,9 +154,14 @@ ApplicationWindow {
         var projStr = backend.get_projects_json()
         var projList = JSON.parse(projStr)
         projectsModel.clear()
-        projectsModel.append({ "name": backend.appLanguage === "ar" ? "الافتراضي" : "Default", "path": backend.baseDir })
+        projectsModel.append({ "name": backend.appLanguage === "ar" ? "الافتراضي" : "Default", "path": backend.baseDir, "created_at": "-", "template_json": "" })
         for (var i = 0; i < projList.length; i++) {
-            projectsModel.append({ "name": projList[i].name, "path": projList[i].path })
+            projectsModel.append({
+                "name": projList[i].name,
+                "path": projList[i].path,
+                "created_at": projList[i].created_at || "",
+                "template_json": projList[i].template_json || ""
+            })
         }
 
         // Fetch logs
@@ -227,6 +233,17 @@ ApplicationWindow {
         
         geminiApiKeyInput.text = backend.get_gemini_api_key()
         canvasChart.requestPaint()
+    }
+
+    function activateProject(projectName) {
+        for (var i = 0; i < projectsModel.count; i++) {
+            if (projectsModel.get(i).name === projectName) {
+                projectSelector.currentIndex = i;
+                backend.log_action("info", "تم تفعيل المشروع: " + projectName);
+                return true;
+            }
+        }
+        return false;
     }
 
     Component.onCompleted: {
@@ -593,7 +610,8 @@ ApplicationWindow {
                                 { "icon": "📖", "key": "tab_storyteller", "idx": 9 },
                                 { "icon": "🛡️", "key": "tab_status_dash", "idx": 10 },
                                 { "icon": "📊", "key": "tab_dashboard", "idx": 11 },
-                                { "icon": "🔗", "key": "tab_link_automator", "idx": 12 }
+                                { "icon": "🔗", "key": "tab_link_automator", "idx": 12 },
+                                { "icon": "📁", "key": "tab_projects_advanced", "idx": 13 }
                             ]
                             
                             Button {
@@ -2239,6 +2257,12 @@ ApplicationWindow {
 
         // TAB 12: Link & Chat Automator Screen
         LinkAutomatorScreen {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
+
+        // TAB 13: Advanced Projects Screen
+        ProjectsScreen {
             Layout.fillWidth: true
             Layout.fillHeight: true
         }

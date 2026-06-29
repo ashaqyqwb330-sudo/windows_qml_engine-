@@ -261,6 +261,142 @@ class EngineBackend(QObject):
             self.notificationSent.emit("إدارة المشاريع", f"تم إنشاء وربط المشروع '{name}' بنجاح.", "success")
         return success
 
+    @Slot(str, result=str)
+    def add_project_from_json(self, json_str):
+        try:
+            data = json.loads(json_str)
+            name = data.get("name", "").strip()
+            path = data.get("path", "").strip()
+            
+            if not name:
+                return json.dumps({"success": False, "message": "اسم المشروع غير موجود أو فارغ!"}, ensure_ascii=False)
+            
+            # If path is not specified or relative, make it relative to self._base_dir
+            if not path:
+                path = os.path.join(self._base_dir, name)
+            else:
+                path = self.clean_path_url(path)
+                if not os.path.isabs(path):
+                    path = os.path.join(self._base_dir, path)
+            
+            # Ensure project directory exists
+            os.makedirs(path, exist_ok=True)
+            
+            # Create subfolders listed in folders
+            folders = data.get("folders", [])
+            for f in folders:
+                folder_path_en = f.get("path_en", "").strip()
+                if folder_path_en:
+                    full_folder_path = os.path.join(path, folder_path_en)
+                    os.makedirs(full_folder_path, exist_ok=True)
+            
+            # Save project with the JSON template
+            success = self.db.add_project(name, path, json_str)
+            if success:
+                self.db.log_action("success", f"تم استيراد مشروع من قالب JSON بنجاح: {name}")
+                self.logAdded.emit("success", f"تم استيراد قالب مشروع جديد بنجاح: {name}")
+                self.dbUpdated.emit()
+                self.notificationSent.emit("إدارة المشاريع", f"تم استيراد وإنشاء المشروع '{name}' بنجاح.", "success")
+                return json.dumps({"success": True, "message": f"تم استيراد وإنشاء المشروع '{name}' بنجاح."}, ensure_ascii=False)
+            else:
+                return json.dumps({"success": False, "message": "فشل حفظ المشروع في قاعدة البيانات!"}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"خطأ أثناء استيراد القالب: {str(e)}"}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def export_project_to_json(self, project_name):
+        try:
+            projects = self.db.get_projects()
+            target_proj = None
+            for p in projects:
+                if p["name"] == project_name:
+                    target_proj = p
+                    break
+            
+            if not target_proj:
+                return json.dumps({"success": False, "message": "المشروع المحدد غير موجود في قاعدة البيانات!"}, ensure_ascii=False)
+            
+            template_json_str = target_proj.get("template_json")
+            if template_json_str:
+                try:
+                    parsed = json.loads(template_json_str)
+                    return json.dumps(parsed, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass
+            
+            folders = []
+            proj_path = target_proj["path"]
+            if os.path.exists(proj_path):
+                for item in os.listdir(proj_path):
+                    item_path = os.path.join(proj_path, item)
+                    if os.path.isdir(item_path) and not item.startswith('.'):
+                        folders.append({
+                            "name_ar": f"مجلد {item}",
+                            "path_en": item,
+                            "file_types": [".kt", ".py", ".html", ".json"],
+                            "keywords": []
+                        })
+            
+            if not folders:
+                folders = [
+                    {"name_ar": "النماذج البرمجية", "path_en": "models", "file_types": [".kt", ".py"], "keywords": ["data class", "class"]},
+                    {"name_ar": "واجهات العرض", "path_en": "views", "file_types": [".kt", ".qml"], "keywords": ["Composable", "Rectangle"]}
+                ]
+                
+            export_data = {
+                "name": project_name,
+                "path": target_proj["path"],
+                "folders": folders
+            }
+            return json.dumps(export_data, indent=4, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"خطأ أثناء تصدير المشروع: {str(e)}"}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def get_project_details(self, project_name):
+        try:
+            projects = self.db.get_projects()
+            target_proj = None
+            for p in projects:
+                if p["name"] == project_name:
+                    target_proj = p
+                    break
+            
+            if not target_proj:
+                return json.dumps({"success": False, "message": "المشروع غير موجود!"}, ensure_ascii=False)
+            
+            folder_count = 0
+            file_count = 0
+            proj_path = target_proj["path"]
+            
+            if os.path.exists(proj_path):
+                for root_dir, dirs, files in os.walk(proj_path):
+                    dirs[:] = [d for d in dirs if not d.startswith('.')]
+                    folder_count += len(dirs)
+                    file_count += len(files)
+            
+            details = {
+                "name": target_proj["name"],
+                "path": target_proj["path"],
+                "created_at": target_proj["created_at"],
+                "folder_count": folder_count,
+                "file_count": file_count,
+                "template_json": target_proj.get("template_json", "") or ""
+            }
+            return json.dumps({"success": True, "details": details}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"خطأ في جلب التفاصيل: {str(e)}"}, ensure_ascii=False)
+
+    @Slot(str, result=bool)
+    def delete_project(self, project_name):
+        success = self.db.delete_project(project_name)
+        if success:
+            self.db.log_action("info", f"تم حذف المشروع من قائمة المنصة بنجاح: {project_name}")
+            self.logAdded.emit("info", f"تم حذف المشروع: {project_name}")
+            self.dbUpdated.emit()
+            self.notificationSent.emit("إدارة المشاريع", f"تم إلغاء ربط المشروع '{project_name}' من قاعدة البيانات بنجاح.", "info")
+        return success
+
     @Slot(result=str)
     def get_projects_json(self):
         projects = self.db.get_projects()
